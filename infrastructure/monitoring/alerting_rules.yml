@@ -1,0 +1,88 @@
+groups:
+- name: warehouse_system_alerts
+  rules:
+  # 庫存服務告警
+  - alert: InventoryServiceDown
+    expr: up{job="inventory-service"} == 0
+    for: 1m
+    labels:
+      severity: critical
+    annotations:
+      summary: "Inventory service is down"
+      description: "Inventory service has been down for more than 1 minute"
+
+  - alert: HighInventoryOperationLatency
+    expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket{job="inventory-service"}[5m])) > 2
+    for: 2m
+    labels:
+      severity: warning
+    annotations:
+      summary: "High inventory operation latency"
+      description: "95th percentile latency is {{ $value }}s"
+
+  - alert: DatabaseConnectionPoolHigh
+    expr: db_connection_pool_active / db_connection_pool_max > 0.8
+    for: 2m
+    labels:
+      severity: warning
+    annotations:
+      summary: "Database connection pool usage is high"
+      description: "Connection pool usage is {{ $value | humanizePercentage }}"
+
+  # 料架容量告警
+  - alert: ShelfCapacityHigh
+    expr: (shelf_occupied_slots / shelf_total_slots) > 0.9
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "Shelf {{ $labels.shelf_id }} capacity is high"
+      description: "Shelf is {{ $value | humanizePercentage }} full"
+
+  - alert: ShelfCapacityFull
+    expr: (shelf_occupied_slots / shelf_total_slots) >= 1.0
+    for: 1m
+    labels:
+      severity: critical
+    annotations:
+      summary: "Shelf {{ $labels.shelf_id }} is completely full"
+      description: "No available slots in shelf {{ $labels.shelf_id }}"
+
+  # 系統資源告警
+  - alert: HighMemoryUsage
+    expr: (node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) / node_memory_MemTotal_bytes > 0.85
+    for: 2m
+    labels:
+      severity: warning
+    annotations:
+      summary: "High memory usage on {{ $labels.instance }}"
+      description: "Memory usage is {{ $value | humanizePercentage }}"
+
+  - alert: HighCPUUsage
+    expr: 100 - (avg by(instance) (irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "High CPU usage on {{ $labels.instance }}"
+      description: "CPU usage is {{ $value }}%"
+
+  # Kafka 告警
+  - alert: KafkaConsumerLag
+    expr: kafka_consumer_lag_sum > 1000
+    for: 2m
+    labels:
+      severity: warning
+    annotations:
+      summary: "High Kafka consumer lag"
+      description: "Consumer group {{ $labels.consumergroup }} has lag of {{ $value }} messages"
+
+  # Redis 告警
+  - alert: RedisMemoryUsageHigh
+    expr: redis_memory_used_bytes / redis_memory_max_bytes > 0.8
+    for: 2m
+    labels:
+      severity: warning
+    annotations:
+      summary: "Redis memory usage is high"
+      description: "Redis memory usage is {{ $value | humanizePercentage }}"

@@ -1,0 +1,144 @@
+# docker-compose.dev.yml
+version: '3.8'
+
+services:
+  # 數據庫
+  postgres:
+    image: postgres:14
+    environment:
+      POSTGRES_DB: warehouse
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  mongodb:
+    image: mongo:5.0
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+
+  # 緩存和消息隊列
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+
+  kafka:
+    image: confluentinc/cp-kafka:latest
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    ports:
+      - "9092:9092"
+    depends_on:
+      - zookeeper
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:latest
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+
+  # API Gateway
+  kong:
+    image: kong:latest
+    environment:
+      KONG_DATABASE: "off"
+      KONG_DECLARATIVE_CONFIG: /kong/declarative/kong.yml
+      KONG_PROXY_ACCESS_LOG: /dev/stdout
+      KONG_ADMIN_ACCESS_LOG: /dev/stdout
+      KONG_PROXY_ERROR_LOG: /dev/stderr
+      KONG_ADMIN_ERROR_LOG: /dev/stderr
+      KONG_ADMIN_LISTEN: 0.0.0.0:8001
+    ports:
+      - "8000:8000"
+      - "8001:8001"
+    volumes:
+      - ./api-gateway/kong.yml:/kong/declarative/kong.yml
+
+  # 微服務
+  inventory-service:
+    build: ./services/inventory-service
+    environment:
+      DATABASE_URL: postgres://admin:password@postgres:5432/warehouse
+      REDIS_URL: redis://redis:6379
+      KAFKA_BROKERS: kafka:9092
+    ports:
+      - "8080:8080"
+    depends_on:
+      - postgres
+      - redis
+      - kafka
+
+  location-service:
+    build: ./services/location-service
+    environment:
+      MONGODB_URL: mongodb://mongodb:27017/warehouse
+      REDIS_URL: redis://redis:6379
+    ports:
+      - "8081:8081"
+    depends_on:
+      - mongodb
+      - redis
+
+  realtime-service:
+    build: ./services/realtime-service
+    environment:
+      REDIS_URL: redis://redis:6379
+      KAFKA_BROKERS: kafka:9092
+      NODE_ENV: development
+    ports:
+      - "8082:8082"
+    depends_on:
+      - redis
+      - kafka
+
+  # 前端應用
+  worker-app:
+    build: ./frontend/worker-app
+    ports:
+      - "3000:3000"
+    environment:
+      REACT_APP_API_URL: http://localhost:8000
+      REACT_APP_WS_URL: ws://localhost:8082
+
+  admin-dashboard:
+    build: ./frontend/admin-dashboard
+    ports:
+      - "3001:3000"
+    environment:
+      REACT_APP_API_URL: http://localhost:8000
+
+  # 監控
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./infrastructure/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3002:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin
+    volumes:
+      - grafana_data:/var/lib/grafana
+
+volumes:
+  postgres_data:
+  mongodb_data:
+  redis_data:
+  grafana_data:

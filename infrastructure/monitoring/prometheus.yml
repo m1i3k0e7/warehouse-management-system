@@ -1,0 +1,48 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  - "alerting_rules.yml"
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+          - alertmanager:9093
+
+scrape_configs:
+  # 服務指標收集
+  - job_name: 'inventory-service'
+    static_configs:
+      - targets: ['inventory-service:8080']
+    metrics_path: '/metrics'
+    scrape_interval: 10s
+
+  - job_name: 'location-service'
+    static_configs:
+      - targets: ['location-service:8081']
+    metrics_path: '/metrics'
+
+  - job_name: 'realtime-service'
+    static_configs:
+      - targets: ['realtime-service:8082']
+    metrics_path: '/metrics'
+
+  # 基礎設施指標
+  - job_name: 'postgres-exporter'
+    static_configs:
+      - targets: ['postgres-exporter:9187']
+
+  - job_name: 'redis-exporter'
+    static_configs:
+      - targets: ['redis-exporter:9121']
+
+  - job_name: 'kafka-exporter'
+    static_configs:
+      - targets: ['kafka-exporter:9308']
+
+  # 節點指標
+  - job_name: 'node-exporter'
+    static_configs:
+      - targets: ['node-exporter:9100']

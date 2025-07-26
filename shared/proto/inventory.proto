@@ -1,0 +1,111 @@
+syntax = "proto3";
+
+package warehouse.inventory.v1;
+
+option go_package = "warehouse/pkg/proto/inventory";
+
+// 庫存服務定義
+service InventoryService {
+  rpc PlaceMaterial(PlaceMaterialRequest) returns (PlaceMaterialResponse);
+  rpc RemoveMaterial(RemoveMaterialRequest) returns (RemoveMaterialResponse);
+  rpc GetShelfStatus(GetShelfStatusRequest) returns (GetShelfStatusResponse);
+  rpc SearchMaterials(SearchMaterialsRequest) returns (SearchMaterialsResponse);
+  rpc GetOperationHistory(GetOperationHistoryRequest) returns (GetOperationHistoryResponse);
+}
+
+// 請求/響應消息
+message PlaceMaterialRequest {
+  string material_barcode = 1;
+  string slot_id = 2;
+  string operator_id = 3;
+}
+
+message PlaceMaterialResponse {
+  bool success = 1;
+  string message = 2;
+  Operation operation = 3;
+}
+
+message GetShelfStatusRequest {
+  string shelf_id = 1;
+  bool include_details = 2;
+}
+
+message GetShelfStatusResponse {
+  ShelfStatus status = 1;
+}
+
+// 數據模型
+message Material {
+  string id = 1;
+  string barcode = 2;
+  string name = 3;
+  string type = 4;
+  MaterialStatus status = 5;
+  int64 created_at = 6;
+  int64 updated_at = 7;
+}
+
+message Slot {
+  string id = 1;
+  string shelf_id = 2;
+  int32 row = 3;
+  int32 column = 4;
+  SlotStatus status = 5;
+  string material_id = 6;
+  int64 updated_at = 7;
+  int64 version = 8;
+}
+
+message Operation {
+  string id = 1;
+  OperationType type = 2;
+  string material_id = 3;
+  string slot_id = 4;
+  string operator_id = 5;
+  string shelf_id = 6;
+  int64 timestamp = 7;
+  OperationStatus status = 8;
+}
+
+message ShelfStatus {
+  string shelf_id = 1;
+  int32 total_slots = 2;
+  int32 empty_slots = 3;
+  int32 occupied_slots = 4;
+  repeated Slot slots = 5;
+  int64 updated_at = 6;
+}
+
+// 枚舉類型
+enum MaterialStatus {
+  MATERIAL_STATUS_UNSPECIFIED = 0;
+  MATERIAL_STATUS_AVAILABLE = 1;
+  MATERIAL_STATUS_IN_USE = 2;
+  MATERIAL_STATUS_RESERVED = 3;
+  MATERIAL_STATUS_MAINTENANCE = 4;
+}
+
+enum SlotStatus {
+  SLOT_STATUS_UNSPECIFIED = 0;
+  SLOT_STATUS_EMPTY = 1;
+  SLOT_STATUS_OCCUPIED = 2;
+  SLOT_STATUS_RESERVED = 3;
+  SLOT_STATUS_MAINTENANCE = 4;
+}
+
+enum OperationType {
+  OPERATION_TYPE_UNSPECIFIED = 0;
+  OPERATION_TYPE_PLACEMENT = 1;
+  OPERATION_TYPE_REMOVAL = 2;
+  OPERATION_TYPE_MOVE = 3;
+  OPERATION_TYPE_RESERVATION = 4;
+}
+
+enum OperationStatus {
+  OPERATION_STATUS_UNSPECIFIED = 0;
+  OPERATION_STATUS_PENDING = 1;
+  OPERATION_STATUS_COMPLETED = 2;
+  OPERATION_STATUS_FAILED = 3;
+  OPERATION_STATUS_CANCELLED = 4;
+}
