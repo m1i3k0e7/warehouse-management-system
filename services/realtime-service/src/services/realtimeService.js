@@ -154,6 +154,90 @@ class RealtimeService {
       room.activeConnections = Math.max(0, room.activeConnections - 1);
     }
   }
+
+  async broadcastShelfStatusChange(data) {
+    const { shelf_id, old_status, new_status, timestamp } = data;
+    
+    try {
+      // 廣播給該料架的工作人員
+      this.io.to(`shelf_${shelf_id}`).emit('shelf_status_changed', {
+        shelfId: shelf_id,
+        oldStatus: old_status,
+        newStatus: new_status,
+        timestamp
+      });
+
+      // 廣播給管理後台
+      this.io.to('admin_dashboard').emit('shelf_status_update', data);
+      
+      logger.info(`Broadcasted shelf status change`, { shelf_id, old_status, new_status });
+    } catch (error) {
+      logger.error('Failed to broadcast shelf status change:', error);
+    }
+  }
+
+  // 廣播健康告警
+  async broadcastHealthAlert(alertData) {
+    try {
+      const { shelf_id, health_score, message, severity } = alertData;
+      
+      // 發送給相關料架的工作人員
+      this.io.to(`shelf_${shelf_id}`).emit('health_alert', {
+        type: 'shelf_health',
+        shelfId: shelf_id,
+        healthScore: health_score,
+        message,
+        severity,
+        timestamp: alertData.timestamp
+      });
+
+      // 發送給管理後台
+      this.io.to('admin_dashboard').emit('health_alert', alertData);
+      
+      logger.info(`Broadcasted health alert`, { shelf_id, severity });
+    } catch (error) {
+      logger.error('Failed to broadcast health alert:', error);
+    }
+  }
+
+  // 廣播系統告警
+  async broadcastSystemAlert(alertData) {
+    try {
+      // 主要發送給管理後台
+      this.io.to('admin_dashboard').emit('system_alert', alertData);
+      
+      // 如果是緊急告警，廣播給所有連接的客戶端
+      if (alertData.severity === 'critical') {
+        this.io.emit('critical_system_alert', {
+          message: alertData.message,
+          timestamp: alertData.timestamp
+        });
+      }
+      
+      logger.info(`Broadcasted system alert`, { type: alertData.type, severity: alertData.severity });
+    } catch (error) {
+      logger.error('Failed to broadcast system alert:', error);
+    }
+  }
+
+  // 廣播審計日誌
+  async broadcastAuditLog(logData) {
+    try {
+      // 只發送給管理後台
+      this.io.to('admin_dashboard').emit('audit_log', logData);
+    } catch (error) {
+      logger.error('Failed to broadcast audit log:', error);
+    }
+  }
+
+  // 向特定料架廣播消息
+  async broadcastToShelf(shelfId, message) {
+    try {
+      this.io.to(`shelf_${shelfId}`).emit('shelf_message', message);
+    } catch (error) {
+      logger.error('Failed to broadcast to shelf:', error);
+    }
+  }
 }
 
 module.exports = RealtimeService;

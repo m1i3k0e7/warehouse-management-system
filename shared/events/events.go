@@ -2,81 +2,77 @@ package events
 
 import "time"
 
-// 基礎事件結構
-type BaseEvent struct {
-    EventID   string    `json:"event_id"`
-    EventType string    `json:"event_type"`
-    Version   string    `json:"version"`
-    Timestamp time.Time `json:"timestamp"`
-    Source    string    `json:"source"`
-}
-
-// 材料放置事件
-type MaterialPlacedEvent struct {
+// 材料移動事件
+type MaterialMovedEvent struct {
     BaseEvent
     MaterialID string `json:"material_id"`
-    SlotID     string `json:"slot_id"`
+    FromSlotID string `json:"from_slot_id"`
+    ToSlotID   string `json:"to_slot_id"`
     ShelfID    string `json:"shelf_id"`
     OperatorID string `json:"operator_id"`
 }
 
-// 材料移除事件
-type MaterialRemovedEvent struct {
+// 料架狀態變更事件
+type ShelfStatusChangedEvent struct {
     BaseEvent
-    MaterialID string `json:"material_id"`
-    SlotID     string `json:"slot_id"`
-    ShelfID    string `json:"shelf_id"`
-    OperatorID string `json:"operator_id"`
-}
-
-// 格子狀態變更事件
-type SlotStatusChangedEvent struct {
-    BaseEvent
-    SlotID    string `json:"slot_id"`
     ShelfID   string `json:"shelf_id"`
     OldStatus string `json:"old_status"`
     NewStatus string `json:"new_status"`
-    Reason    string `json:"reason"`
 }
 
-// 系統告警事件
-type SystemAlertEvent struct {
+// 批量操作事件
+type BatchOperationEvent struct {
     BaseEvent
-    AlertType string                 `json:"alert_type"`
-    Severity  string                 `json:"severity"`
-    Message   string                 `json:"message"`
-    Metadata  map[string]interface{} `json:"metadata"`
+    OperationType string   `json:"operation_type"` // "batch_place", "batch_remove"
+    ShelfID       string   `json:"shelf_id"`
+    OperatorID    string   `json:"operator_id"`
+    ItemCount     int      `json:"item_count"`
+    SuccessCount  int      `json:"success_count"`
+    FailureCount  int      `json:"failure_count"`
+    Duration      int64    `json:"duration_ms"`
 }
 
-// 事件工廠
-func NewMaterialPlacedEvent(materialID, slotID, shelfID, operatorID string) *MaterialPlacedEvent {
-    return &MaterialPlacedEvent{
+// 料架健康事件
+type ShelfHealthEvent struct {
+    BaseEvent
+    ShelfID      string  `json:"shelf_id"`
+    HealthScore  float64 `json:"health_score"`
+    TotalSlots   int     `json:"total_slots"`
+    HealthySlots int     `json:"healthy_slots"`
+    ErrorSlots   int     `json:"error_slots"`
+}
+
+// 事件工廠函數
+func NewMaterialMovedEvent(materialID, fromSlotID, toSlotID, shelfID, operatorID string) *MaterialMovedEvent {
+    return &MaterialMovedEvent{
         BaseEvent: BaseEvent{
             EventID:   generateUUID(),
-            EventType: "material.placed",
+            EventType: "material.moved",
             Version:   "v1",
             Timestamp: time.Now(),
             Source:    "inventory-service",
         },
         MaterialID: materialID,
-        SlotID:     slotID,
+        FromSlotID: fromSlotID,
+        ToSlotID:   toSlotID,
         ShelfID:    shelfID,
         OperatorID: operatorID,
     }
 }
 
-func NewMaterialRemovedEvent(materialID, slotID, shelfID, operatorID string) *MaterialRemovedEvent {
-    return &MaterialRemovedEvent{
+func NewShelfHealthEvent(shelfID string, healthScore float64, totalSlots, healthySlots, errorSlots int) *ShelfHealthEvent {
+    return &ShelfHealthEvent{
         BaseEvent: BaseEvent{
             EventID:   generateUUID(),
-            EventType: "material.removed",
+            EventType: "shelf.health",
             Version:   "v1",
             Timestamp: time.Now(),
             Source:    "inventory-service",
         },
-        MaterialID: materialID,
-        SlotID:     slotID,
-        ShelfID:    shelfID,
-        OperatorID: operatorID,
+        ShelfID:      shelfID,
+        HealthScore:  healthScore,
+        TotalSlots:   totalSlots,
+        HealthySlots: healthySlots,
+        ErrorSlots:   errorSlots,
     }
 }
