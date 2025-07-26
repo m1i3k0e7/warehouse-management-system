@@ -1,0 +1,68 @@
+# Operating System Files
+.DS_Store
+Thumbs.db
+
+# IDE and Editor Files
+.idea/
+.vscode/
+*.sublime-project
+*.sublime-workspace
+*.swp
+*.swo
+
+# Build Artifacts and Binaries
+*.exe
+*.dll
+*.so
+*.o
+*.obj
+*.bin
+
+# Dependency Directories
+node_modules/
+vendor/        # Go modules vendor directory
+
+# Go Specific
+*.a
+*.test
+*.out
+/bin/
+/pkg/
+
+# Node.js Specific
+npm-debug.log
+yarn-debug.log
+
+# Python Specific
+__pycache__/
+*.pyc
+*.pyd
+.venv/
+venv/
+
+# Log Files
+*.log
+logs/
+
+# Configuration Files (potentially sensitive)
+.env
+.env.*
+*.env
+*.env.*
+config.local.js
+
+# Database Files (if any local development databases create files)
+*.db
+*.sqlite
+*.sqlite3
+
+# Monitoring Data (e.g., Prometheus data directories)
+/infrastructure/monitoring/prometheus_data/
+
+# Kubernetes/Terraform generated files (if any, though usually these are committed)
+# .terraform/
+# *.tfplan
+
+# Other temporary files
+*~
+*.tmp
