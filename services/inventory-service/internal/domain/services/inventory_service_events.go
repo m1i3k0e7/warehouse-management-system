@@ -104,18 +104,17 @@ func (s *InventoryService) publishSystemAlertEvent(ctx context.Context, alertTyp
     }
 }
 
+
 // 事件重試調度器
-func (s *InventoryService) scheduleEventRetry(ctx context.Context, eventType string, event interface{}) {
-    // 將失敗的事件存儲到 Redis 或數據庫，由後台任務重試
-    retryData := map[string]interface{}{
-        "event_type": eventType,
-        "event_data": event,
-        "retry_count": 0,
-        "scheduled_at": time.Now().Add(time.Minute * 5), // 5分鐘後重試
-    }
-    
-    key := fmt.Sprintf("event_retry:%s", generateUUID())
-    if err := s.cacheService.Set(ctx, key, retryData, time.Hour*24); err != nil {
-        logger.Error("Failed to schedule event retry", err)
-    }
+func (s *InventoryService) scheduleEventRetry(ctx context.Context, topic, eventType string, event interface{}, originalErr error) {
+	// 將失敗的事件存儲到數據庫的死信隊列中
+	failedEvent, err := entities.NewFailedEvent(generateUUID(), topic, eventType, event, originalErr)
+	if err != nil {
+		logger.Error("Failed to create failed event", err)
+		return
+	}
+
+	if err := s.failedEventRepo.Create(ctx, failedEvent); err != nil {
+		logger.Error("Failed to save failed event to DLQ", err)
+	}
 }

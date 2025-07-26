@@ -1,11 +1,11 @@
 const redis = require('../utils/redis');
 const logger = require('../utils/logger');
+const InventoryAPIService = require('./inventoryAPIService');
 
 class RealtimeService {
   constructor(io) {
     this.io = io;
-    this.rooms = new Map(); // 房間管理
-    this.clientSessions = new Map(); // 客戶端會話
+    this.inventoryAPIService = new InventoryAPIService();
   }
 
   // 廣播庫存更新事件
@@ -47,19 +47,17 @@ class RealtimeService {
     try {
       socket.join(`shelf_${shelfId}`);
       
-      // 記錄會話信息
-      this.clientSessions.set(socket.id, {
+      // 記錄會話信息到 Redis
+      const sessionData = {
         shelfId,
         operatorId,
-        joinedAt: new Date()
-      });
+        joinedAt: new Date().toISOString()
+      };
+      await redis.set(`session:${socket.id}`, JSON.stringify(sessionData), 'EX', 3600); // 設置會話過期時間為1小時
 
       // 發送當前料架狀態
       const shelfStatus = await this.getShelfStatus(shelfId);
       socket.emit('shelf_status', shelfStatus);
-
-      // 更新房間統計
-      this.updateRoomStats(`shelf_${shelfId}`, 'join');
       
       logger.info(`Client joined shelf room`, { 
         socketId: socket.id, 
@@ -74,17 +72,17 @@ class RealtimeService {
 
   // 處理實時操作請求
   async handleOperationRequest(socket, data) {
-    const session = this.clientSessions.get(socket.id);
-    if (!session) {
+    const sessionData = await redis.get(`session:${socket.id}`);
+    if (!sessionData) {
       socket.emit('operation_response', { 
         success: false, 
         error: 'Session not found' 
       });
       return;
     }
+    const session = JSON.parse(sessionData);
 
     try {
-      // 這裡可以調用其他服務的 API 來處理操作
       const result = await this.processOperation({
         ...data,
         operatorId: session.operatorId,
@@ -104,12 +102,42 @@ class RealtimeService {
     }
   }
 
+  // 處理操作請求的內部邏輯
+  async processOperation(operationData) {
+    const { type, materialBarcode, slotId, fromSlotId, toSlotId, operatorId, shelfId, reason, duration, purpose } = operationData;
+
+    switch (type) {
+      case 'place_material':
+        return this.inventoryAPIService.placeMaterial({
+          materialBarcode,
+          slotId,
+          operatorId,
+        });
+      case 'remove_material':
+        return this.inventoryAPIService.removeMaterial({
+          slotId,
+          operatorId,
+          reason,
+        });
+      case 'move_material':
+        return this.inventoryAPIService.moveMaterial({
+          fromSlotId,
+          toSlotId,
+          operatorId,
+          reason,
+        });
+      // Add more operation types as needed
+      default:
+        throw new Error(`Unknown operation type: ${type}`);
+    }
+  }
+
   // 處理客戶端斷開連接
-  handleDisconnect(socket) {
-    const session = this.clientSessions.get(socket.id);
-    if (session) {
-      this.updateRoomStats(`shelf_${session.shelfId}`, 'leave');
-      this.clientSessions.delete(socket.id);
+  async handleDisconnect(socket) {
+    const sessionData = await redis.get(`session:${socket.id}`);
+    if (sessionData) {
+      const session = JSON.parse(sessionData);
+      await redis.del(`session:${socket.id}`);
       
       logger.info(`Client disconnected`, { 
         socketId: socket.id, 
@@ -121,13 +149,15 @@ class RealtimeService {
   // 獲取料架狀態
   async getShelfStatus(shelfId) {
     try {
-      const cachedStatus = await redis.hgetall(`shelf:${shelfId}`);
-      if (cachedStatus && cachedStatus.data) {
-        return JSON.parse(cachedStatus.data);
+      const cachedStatus = await redis.get(`shelf_status:${shelfId}`);
+      if (cachedStatus) {
+        return JSON.parse(cachedStatus);
       }
       
-      // 如果緩存中沒有，可以調用庫存服務 API
-      return { shelfId, status: 'unknown' };
+      // 如果緩存中沒有，調用庫存服務 API
+      const apiStatus = await this.inventoryAPIService.getShelfStatus(shelfId);
+      await redis.set(`shelf_status:${shelfId}`, JSON.stringify(apiStatus), 'EX', 600); // 緩存10分鐘
+      return apiStatus;
     } catch (error) {
       logger.error('Failed to get shelf status:', error);
       return { shelfId, status: 'error' };
@@ -141,19 +171,7 @@ class RealtimeService {
     await redis.expire(key, 86400 * 7); // 保存7天
   }
 
-  // 更新房間統計
-  updateRoomStats(roomName, action) {
-    if (!this.rooms.has(roomName)) {
-      this.rooms.set(roomName, { activeConnections: 0 });
-    }
-    
-    const room = this.rooms.get(roomName);
-    if (action === 'join') {
-      room.activeConnections++;
-    } else if (action === 'leave') {
-      room.activeConnections = Math.max(0, room.activeConnections - 1);
-    }
-  }
+  
 
   async broadcastShelfStatusChange(data) {
     const { shelf_id, old_status, new_status, timestamp } = data;

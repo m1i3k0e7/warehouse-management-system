@@ -3,6 +3,9 @@ const http = require('http');
 const socketIo = require('socket.io');
 const cors = require('cors');
 
+const { createAdapter } = require('@socket.io/redis-adapter');
+const { createClient } = require('redis');
+
 const config = require('./config');
 const logger = require('./utils/logger');
 const RealtimeService = require('./services/realtimeService');
@@ -13,14 +16,21 @@ class App {
   constructor() {
     this.app = express();
     this.server = http.createServer(this.app);
-    this.io = socketIo(this.server, {
+    this.io = new socketIo.Server(this.server, {
       cors: {
         origin: config.cors.origin,
         methods: ["GET", "POST"]
       },
       transports: ['websocket', 'polling']
     });
-    
+
+    const pubClient = createClient({ url: config.redis.url });
+    const subClient = pubClient.duplicate();
+
+    Promise.all([pubClient.connect(), subClient.connect()]).then(() => {
+      this.io.adapter(createAdapter(pubClient, subClient));
+    });
+
     this.realtimeService = new RealtimeService(this.io);
     this.socketController = new SocketController(this.io, this.realtimeService);
     this.kafkaController = new KafkaController(this.realtimeService);

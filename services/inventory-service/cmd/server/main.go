@@ -57,6 +57,7 @@ func main() {
     slotRepo := repositories.NewSlotRepository(db)
     operationRepo := repositories.NewOperationRepository(db)
     alertRepo := repositories.NewAlertRepository(db)
+    failedEventRepo := repositories.NewFailedEventRepository(db)
     
     // 初始化庫存服務
     inventoryService := services.NewInventoryService(
@@ -69,6 +70,7 @@ func main() {
         cacheService,
         auditService,
         alertService,
+        failedEventRepo,
     )
     
     // 初始化 MQTT 處理器
