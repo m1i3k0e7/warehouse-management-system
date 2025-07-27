@@ -14,7 +14,10 @@ import (
     "warehouse/internal/infrastructure/database"
     "warehouse/internal/infrastructure/cache"
     "warehouse/internal/infrastructure/messaging"
-    "warehouse/internal/interfaces/http/router"
+    "warehouse/internal/application/commands"
+    "warehouse/internal/application/queries"
+    "warehouse/internal/domain/repositories"
+    "warehouse/internal/interfaces/http/handlers"
     "warehouse/internal/interfaces/mqtt"
     "warehouse/internal/domain/services"
     "warehouse/pkg/logger"
@@ -79,9 +82,29 @@ func main() {
         log.Fatal("Failed to connect to MQTT broker:", err)
     }
     
+    // Initialize command and query handlers
+    placeMaterialHandler := commands.NewPlaceMaterialCommandHandler(inventoryService)
+    removeMaterialHandler := commands.NewRemoveMaterialCommandHandler(inventoryService)
+    moveMaterialHandler := commands.NewMoveMaterialCommandHandler(inventoryService)
+    reserveSlotsHandler := commands.NewReserveSlotsCommandHandler(inventoryService)
+    batchPlaceMaterialsHandler := commands.NewBatchPlaceMaterialsCommandHandler(inventoryService)
+    handleSlotErrorHandler := commands.NewHandleSlotErrorCommandHandler(inventoryService)
+    updateShelfStatusHandler := commands.NewUpdateShelfStatusCommandHandler(inventoryService)
+
+    getShelfStatusHandler := queries.NewGetShelfStatusQueryHandler(inventoryService)
+    findOptimalSlotHandler := queries.NewFindOptimalSlotQueryHandler(inventoryService)
+    searchMaterialsHandler := queries.NewSearchMaterialsQueryHandler(inventoryService)
+    healthCheckShelfHandler := queries.NewHealthCheckShelfQueryHandler(inventoryService)
+    getOperationsHandler := queries.NewGetOperationsQueryHandler(operationRepo)
+
+    // Initialize HTTP handlers
+    materialHandler := handlers.NewMaterialHandler(placeMaterialHandler, removeMaterialHandler, moveMaterialHandler, searchMaterialsHandler)
+    slotHandler := handlers.NewSlotHandler(reserveSlotsHandler, findOptimalSlotHandler, getShelfStatusHandler, healthCheckShelfHandler)
+    operationHandler := handlers.NewOperationHandler(getOperationsHandler)
+
     // Initialize http router
     gin.SetMode(cfg.Server.Mode)
-    r := router.SetupRouter(db, redisClient, eventService)
+    r := router.SetupRoutes(gin.Default(), materialHandler, slotHandler, operationHandler)
     
     // configure http server
     srv := &http.Server{

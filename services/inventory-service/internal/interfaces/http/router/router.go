@@ -6,7 +6,7 @@ import (
     "warehouse/internal/interfaces/http/middleware"
 )
 
-func SetupInventoryRoutes(r *gin.Engine, inventoryHandler *handlers.InventoryHandler) {
+func SetupRoutes(r *gin.Engine, materialHandler *handlers.MaterialHandler, slotHandler *handlers.SlotHandler, operationHandler *handlers.OperationHandler) {
     // apply global middleware
     r.Use(middleware.CORS())
     r.Use(middleware.RequestLogger())
@@ -16,19 +16,22 @@ func SetupInventoryRoutes(r *gin.Engine, inventoryHandler *handlers.InventoryHan
     v1 := r.Group("/api/v1")
     {
         // material operations
-        v1.POST("/materials/place", inventoryHandler.PlaceMaterial)
-        v1.POST("/materials/remove", inventoryHandler.RemoveMaterial)
-        v1.POST("/materials/move", inventoryHandler.MoveMaterial)
-        v1.POST("/materials/batch-place", inventoryHandler.BatchPlaceMaterials)
-        v1.GET("/materials/search", inventoryHandler.SearchMaterials)
+        v1.POST("/materials/place", materialHandler.PlaceMaterial)
+        v1.POST("/materials/remove", materialHandler.RemoveMaterial)
+        v1.POST("/materials/move", materialHandler.MoveMaterial)
+        v1.POST("/materials/batch-place", materialHandler.BatchPlaceMaterials)
+        v1.GET("/materials/search", materialHandler.SearchMaterials)
         
         // slot operations
-        v1.POST("/slots/reserve", inventoryHandler.ReserveSlots)
-        v1.GET("/slots/optimal", inventoryHandler.FindOptimalSlot)
+        v1.POST("/slots/reserve", slotHandler.ReserveSlots)
+        v1.GET("/slots/optimal", slotHandler.FindOptimalSlot)
         
         // shelf status info
-        v1.GET("/shelves/:shelfId/status", inventoryHandler.GetShelfStatus)
-        v1.GET("/shelves/:shelfId/health", inventoryHandler.HealthCheckShelf)
+        v1.GET("/shelves/:shelfId/status", slotHandler.GetShelfStatus)
+        v1.GET("/shelves/:shelfId/health", slotHandler.HealthCheckShelf)
+
+        // operation logs
+        v1.GET("/operations", operationHandler.GetOperations)
     }
     
     // check health endpoint
