@@ -3,18 +3,19 @@ const logger = require('../utils/logger');
 const InventoryAPIService = require('./inventoryAPIService');
 
 class RealtimeService {
-  constructor(io) {
+  constructor(io, notificationService, roomService) {
     this.io = io;
     this.inventoryAPIService = new InventoryAPIService();
+    this.notificationService = notificationService;
+    this.roomService = roomService;
   }
 
-  // 廣播庫存更新事件
   async broadcastInventoryUpdate(event) {
     const { shelf_id, event_type, slot_id, material_id } = event;
     
     try {
-      // 廣播給該料架的所有工作人員
-      this.io.to(`shelf_${shelf_id}`).emit('inventory_update', {
+      // broadcast to specific shelf room
+      this.roomService.broadcastToRoom(`shelf_${shelf_id}`, 'inventory_update', {
         type: event_type,
         data: {
           shelfId: shelf_id,
@@ -24,38 +25,41 @@ class RealtimeService {
         }
       });
 
-      // 廣播給管理後台
-      this.io.to('admin_dashboard').emit('global_update', {
+      // broadcast to admin dashboard
+      this.roomService.broadcastToRoom('admin_dashboard', 'global_update', {
         type: 'inventory_change',
         data: event
       });
 
-      // 更新實時統計
+      // update realtime statistics
       await this.updateRealtimeStats(shelf_id, event_type);
+
+      // update shelf status cache
+      const updatedShelfStatus = await this.inventoryAPIService.getShelfStatus(shelf_id);
+      await redis.set(`shelf_status:${shelf_id}`, JSON.stringify(updatedShelfStatus), 'EX', 600); // expires in 600 seconds (10 minutes)
       
-      logger.info(`Broadcasted inventory update`, { 
+      logger.info(`Broadcasted inventory update and updated shelf status cache`, { 
         shelfId: shelf_id, 
         eventType: event_type 
       });
     } catch (error) {
-      logger.error('Failed to broadcast inventory update:', error);
+      logger.error('Failed to broadcast inventory update or update cache:', error);
     }
   }
 
-  // 處理客戶端加入料架房間
   async joinShelfRoom(socket, shelfId, operatorId) {
     try {
-      socket.join(`shelf_${shelfId}`);
+      this.roomService.joinRoom(socket, `shelf_${shelfId}`);
       
-      // 記錄會話信息到 Redis
+      // record session data in Redis
       const sessionData = {
         shelfId,
         operatorId,
         joinedAt: new Date().toISOString()
       };
-      await redis.set(`session:${socket.id}`, JSON.stringify(sessionData), 'EX', 3600); // 設置會話過期時間為1小時
+      await redis.set(`session:${socket.id}`, JSON.stringify(sessionData), 'EX', 3600); // expires in 3600 seconds (1 hour)
 
-      // 發送當前料架狀態
+      // send current shelf status to the client
       const shelfStatus = await this.getShelfStatus(shelfId);
       socket.emit('shelf_status', shelfStatus);
       
@@ -70,12 +74,11 @@ class RealtimeService {
     }
   }
 
-  // 處理實時操作請求
   async handleOperationRequest(socket, data) {
     const sessionData = await redis.get(`session:${socket.id}`);
     if (!sessionData) {
-      socket.emit('operation_response', { 
-        success: false, 
+      socket.emit('operation_response', {
+        success: false,
         error: 'Session not found' 
       });
       return;
@@ -89,7 +92,7 @@ class RealtimeService {
         shelfId: session.shelfId
       });
 
-      socket.emit('operation_response', { 
+      socket.emit('operation_response', {
         success: true, 
         data: result 
       });
@@ -102,7 +105,6 @@ class RealtimeService {
     }
   }
 
-  // 處理操作請求的內部邏輯
   async processOperation(operationData) {
     const { type, materialBarcode, slotId, fromSlotId, toSlotId, operatorId, shelfId, reason, duration, purpose } = operationData;
 
@@ -132,7 +134,6 @@ class RealtimeService {
     }
   }
 
-  // 處理客戶端斷開連接
   async handleDisconnect(socket) {
     const sessionData = await redis.get(`session:${socket.id}`);
     if (sessionData) {
@@ -146,7 +147,6 @@ class RealtimeService {
     }
   }
 
-  // 獲取料架狀態
   async getShelfStatus(shelfId) {
     try {
       const cachedStatus = await redis.get(`shelf_status:${shelfId}`);
@@ -154,9 +154,9 @@ class RealtimeService {
         return JSON.parse(cachedStatus);
       }
       
-      // 如果緩存中沒有，調用庫存服務 API
+      // call the inventory API to get the latest status if not cached
       const apiStatus = await this.inventoryAPIService.getShelfStatus(shelfId);
-      await redis.set(`shelf_status:${shelfId}`, JSON.stringify(apiStatus), 'EX', 600); // 緩存10分鐘
+      await redis.set(`shelf_status:${shelfId}`, JSON.stringify(apiStatus), 'EX', 600); // expires in 600 seconds (10 minutes)
       return apiStatus;
     } catch (error) {
       logger.error('Failed to get shelf status:', error);
@@ -164,29 +164,26 @@ class RealtimeService {
     }
   }
 
-  // 更新實時統計
   async updateRealtimeStats(shelfId, eventType) {
     const key = `stats:${shelfId}:${new Date().toISOString().slice(0, 10)}`;
     await redis.hincrby(key, eventType, 1);
-    await redis.expire(key, 86400 * 7); // 保存7天
+    await redis.expire(key, 86400 * 7); // set key to expire in 7 days
   }
-
-  
 
   async broadcastShelfStatusChange(data) {
     const { shelf_id, old_status, new_status, timestamp } = data;
     
     try {
-      // 廣播給該料架的工作人員
-      this.io.to(`shelf_${shelf_id}`).emit('shelf_status_changed', {
+      // broadcast to specific shelf room
+      this.roomService.broadcastToRoom(`shelf_${shelf_id}`, 'shelf_status_changed', {
         shelfId: shelf_id,
         oldStatus: old_status,
         newStatus: new_status,
         timestamp
       });
 
-      // 廣播給管理後台
-      this.io.to('admin_dashboard').emit('shelf_status_update', data);
+      // broadcast to admin dashboard
+      this.roomService.broadcastToRoom('admin_dashboard', 'shelf_status_update', data);
       
       logger.info(`Broadcasted shelf status change`, { shelf_id, old_status, new_status });
     } catch (error) {
@@ -194,13 +191,12 @@ class RealtimeService {
     }
   }
 
-  // 廣播健康告警
   async broadcastHealthAlert(alertData) {
     try {
       const { shelf_id, health_score, message, severity } = alertData;
       
-      // 發送給相關料架的工作人員
-      this.io.to(`shelf_${shelf_id}`).emit('health_alert', {
+      // broadcast to specific shelf room
+      this.roomService.broadcastToRoom(`shelf_${shelf_id}`, 'health_alert', {
         type: 'shelf_health',
         shelfId: shelf_id,
         healthScore: health_score,
@@ -209,8 +205,8 @@ class RealtimeService {
         timestamp: alertData.timestamp
       });
 
-      // 發送給管理後台
-      this.io.to('admin_dashboard').emit('health_alert', alertData);
+      // broadcast to admin dashboard
+      this.roomService.broadcastToRoom('admin_dashboard', 'health_alert', alertData);
       
       logger.info(`Broadcasted health alert`, { shelf_id, severity });
     } catch (error) {
@@ -218,13 +214,12 @@ class RealtimeService {
     }
   }
 
-  // 廣播系統告警
   async broadcastSystemAlert(alertData) {
     try {
-      // 主要發送給管理後台
-      this.io.to('admin_dashboard').emit('system_alert', alertData);
+      // broadcast to admin dashboard
+      this.roomService.broadcastToRoom('admin_dashboard', 'system_alert', alertData);
       
-      // 如果是緊急告警，廣播給所有連接的客戶端
+      // broadcast critical alerts to all connected clients if severity is critical
       if (alertData.severity === 'critical') {
         this.io.emit('critical_system_alert', {
           message: alertData.message,
@@ -238,20 +233,19 @@ class RealtimeService {
     }
   }
 
-  // 廣播審計日誌
   async broadcastAuditLog(logData) {
     try {
-      // 只發送給管理後台
-      this.io.to('admin_dashboard').emit('audit_log', logData);
+      // broadcast to admin dashboard
+      this.roomService.broadcastToRoom('admin_dashboard', 'audit_log', logData);
     } catch (error) {
       logger.error('Failed to broadcast audit log:', error);
     }
   }
 
-  // 向特定料架廣播消息
+  // broadcast a message to a specific shelf
   async broadcastToShelf(shelfId, message) {
     try {
-      this.io.to(`shelf_${shelfId}`).emit('shelf_message', message);
+      this.roomService.broadcastToRoom(`shelf_${shelfId}`, 'shelf_message', message);
     } catch (error) {
       logger.error('Failed to broadcast to shelf:', error);
     }

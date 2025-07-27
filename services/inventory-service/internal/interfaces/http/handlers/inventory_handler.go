@@ -19,7 +19,6 @@ func NewInventoryHandler(inventoryService *services.InventoryService) *Inventory
     }
 }
 
-// 放置材料
 func (h *InventoryHandler) PlaceMaterial(c *gin.Context) {
     var cmd services.PlaceMaterialCommand
     if err := c.ShouldBindJSON(&cmd); err != nil {
@@ -36,7 +35,6 @@ func (h *InventoryHandler) PlaceMaterial(c *gin.Context) {
     c.JSON(http.StatusOK, gin.H{"message": "Material placed successfully"})
 }
 
-// 移除材料
 func (h *InventoryHandler) RemoveMaterial(c *gin.Context) {
     var cmd services.RemoveMaterialCommand
     if err := c.ShouldBindJSON(&cmd); err != nil {
@@ -53,7 +51,6 @@ func (h *InventoryHandler) RemoveMaterial(c *gin.Context) {
     c.JSON(http.StatusOK, gin.H{"message": "Material removed successfully"})
 }
 
-// 移動材料
 func (h *InventoryHandler) MoveMaterial(c *gin.Context) {
     var cmd services.MoveMaterialCommand
     if err := c.ShouldBindJSON(&cmd); err != nil {
@@ -70,7 +67,6 @@ func (h *InventoryHandler) MoveMaterial(c *gin.Context) {
     c.JSON(http.StatusOK, gin.H{"message": "Material moved successfully"})
 }
 
-// 獲取料架狀態
 func (h *InventoryHandler) GetShelfStatus(c *gin.Context) {
     shelfID := c.Param("shelfId")
     
@@ -84,7 +80,6 @@ func (h *InventoryHandler) GetShelfStatus(c *gin.Context) {
     c.JSON(http.StatusOK, status)
 }
 
-// 尋找最佳格子
 func (h *InventoryHandler) FindOptimalSlot(c *gin.Context) {
     materialType := c.Query("material_type")
     shelfID := c.Query("shelf_id")
@@ -104,7 +99,6 @@ func (h *InventoryHandler) FindOptimalSlot(c *gin.Context) {
     c.JSON(http.StatusOK, slot)
 }
 
-// 預留格子
 func (h *InventoryHandler) ReserveSlots(c *gin.Context) {
     var cmd services.ReserveSlotsCommand
     if err := c.ShouldBindJSON(&cmd); err != nil {
@@ -121,7 +115,6 @@ func (h *InventoryHandler) ReserveSlots(c *gin.Context) {
     c.JSON(http.StatusOK, gin.H{"message": "Slots reserved successfully"})
 }
 
-// 料架健康檢查
 func (h *InventoryHandler) HealthCheckShelf(c *gin.Context) {
     shelfID := c.Param("shelfId")
     
@@ -135,7 +128,6 @@ func (h *InventoryHandler) HealthCheckShelf(c *gin.Context) {
     c.JSON(http.StatusOK, health)
 }
 
-// 批量放置材料
 func (h *InventoryHandler) BatchPlaceMaterials(c *gin.Context) {
     var commands []services.PlaceMaterialCommand
     if err := c.ShouldBindJSON(&commands); err != nil {
@@ -152,7 +144,6 @@ func (h *InventoryHandler) BatchPlaceMaterials(c *gin.Context) {
     c.JSON(http.StatusOK, gin.H{"message": "Materials placed successfully"})
 }
 
-// 搜索材料
 func (h *InventoryHandler) SearchMaterials(c *gin.Context) {
     query := c.Query("q")
     limitStr := c.DefaultQuery("limit", "20")

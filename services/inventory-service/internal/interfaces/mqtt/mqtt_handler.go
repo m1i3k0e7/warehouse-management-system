@@ -11,7 +11,7 @@ import (
     "warehouse/pkg/logger"
 )
 
-// MQTT 消息結構定義
+// MQTT message structure for shelf events and status updates
 type ShelfEvent struct {
     ShelfID     string    `json:"shelf_id"`
     SlotID      string    `json:"slot_id"`
@@ -73,13 +73,13 @@ func (h *MQTTHandler) Connect() error {
         return token.Error()
     }
     
-    // 訂閱料架事件
+    // subscribe to shelf events and status updates
     eventTopic := fmt.Sprintf("%s/+/events", h.topicPrefix)
     if token := h.client.Subscribe(eventTopic, 1, h.handleShelfEvent); token.Wait() && token.Error() != nil {
         return token.Error()
     }
     
-    // 訂閱料架狀態
+    // subscribe to shelf status updates
     statusTopic := fmt.Sprintf("%s/+/status", h.topicPrefix)
     if token := h.client.Subscribe(statusTopic, 1, h.handleShelfStatus); token.Wait() && token.Error() != nil {
         return token.Error()
@@ -96,7 +96,7 @@ func (h *MQTTHandler) handleShelfEvent(client mqtt.Client, msg mqtt.Message) {
         return
     }
     
-    // 使用重試機制處理事件
+    // handle the event with retry logic
     h.retryService.ExecuteWithRetry(func() error {
         return h.processShelfEvent(&event)
     }, 3, time.Second*2)
@@ -107,31 +107,31 @@ func (h *MQTTHandler) processShelfEvent(event *ShelfEvent) error {
     defer ctx.Done()
     
     switch event.EventType {
-    case "material_detected":
-        cmd := services.PlaceMaterialCommand{
-            MaterialBarcode: event.MaterialBarcode,
-            SlotID:         event.SlotID,
-            OperatorID:     "SHELF_SYSTEM",
-            SensorData: &services.SensorData{
-                Weight:      event.SensorData.Weight,
-                Temperature: event.SensorData.Temperature,
-                Humidity:    event.SensorData.Humidity,
-            },
-        }
-        return h.inventoryService.PlaceMaterial(ctx, cmd)
-        
-    case "material_removed":
-        cmd := services.RemoveMaterialCommand{
-            SlotID:     event.SlotID,
-            OperatorID: "SHELF_SYSTEM",
-        }
-        return h.inventoryService.RemoveMaterial(ctx, cmd)
-        
-    case "slot_error":
-        return h.inventoryService.HandleSlotError(ctx, event.SlotID, "sensor_error")
-        
-    default:
-        return fmt.Errorf("unknown event type: %s", event.EventType)
+        case "material_detected":
+            cmd := services.PlaceMaterialCommand{
+                MaterialBarcode: event.MaterialBarcode,
+                SlotID:         event.SlotID,
+                OperatorID:     "SHELF_SYSTEM",
+                SensorData: &services.SensorData{
+                    Weight:      event.SensorData.Weight,
+                    Temperature: event.SensorData.Temperature,
+                    Humidity:    event.SensorData.Humidity,
+                },
+            }
+            return h.inventoryService.PlaceMaterial(ctx, cmd)
+            
+        case "material_removed":
+            cmd := services.RemoveMaterialCommand{
+                SlotID:     event.SlotID,
+                OperatorID: "SHELF_SYSTEM",
+            }
+            return h.inventoryService.RemoveMaterial(ctx, cmd)
+            
+        case "slot_error":
+            return h.inventoryService.HandleSlotError(ctx, event.SlotID, "sensor_error")
+            
+        default:
+            return fmt.Errorf("unknown event type: %s", event.EventType)
     }
 }
 

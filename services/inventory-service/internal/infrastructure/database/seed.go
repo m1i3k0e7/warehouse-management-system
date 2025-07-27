@@ -10,26 +10,26 @@ import (
 )
 
 func SeedData(db *gorm.DB) error {
-	// 檢查是否已經有數據
+	// check if the database already has data
 	var count int64
 	db.Model(&entities.Material{}).Count(&count)
 	if count > 0 {
-		return nil // 已有數據，跳過初始化
+		return nil // skip seeding if data already exists
 	}
 	
-	// 創建模擬材料數據
+	// generating mock materials
 	materials := generateMockMaterials(500)
 	if err := db.CreateInBatches(materials, 100).Error; err != nil {
 		return fmt.Errorf("failed to seed materials: %w", err)
 	}
 	
-	// 創建模擬料架和格子數據
-	slots := generateMockSlots(100, 700) // 100個料架，每個700個格子
+	// generating mock slots
+	slots := generateMockSlots(100, 700) // 100 shelves, 700 slots per shelf
 	if err := db.CreateInBatches(slots, 1000).Error; err != nil {
 		return fmt.Errorf("failed to seed slots: %w", err)
 	}
 	
-	// 隨機分配一些材料到格子中
+	// randomly assign materials to slots
 	if err := assignRandomMaterials(db, materials, slots); err != nil {
 		return fmt.Errorf("failed to assign materials: %w", err)
 	}
@@ -62,8 +62,8 @@ func generateMockSlots(shelfCount, slotsPerShelf int) []*entities.Slot {
 	
 	index := 0
 	for shelfNum := 1; shelfNum <= shelfCount; shelfNum++ {
-		rows := 25    // 每個料架25行
-		cols := 28    // 每個料架28列
+		rows := 7    // 7 rows per shelf
+		cols := 100  // 100 columns per shelf
 		
 		for row := 1; row <= rows; row++ {
 			for col := 1; col <= cols; col++ {
@@ -89,21 +89,21 @@ func generateMockSlots(shelfCount, slotsPerShelf int) []*entities.Slot {
 }
 
 func assignRandomMaterials(db *gorm.DB, materials []*entities.Material, slots []*entities.Slot) error {
-	// 隨機分配約30%的材料到格子中
+	// randomly assign 30% of materials to slots
 	assignCount := len(materials) * 3 / 10
 	
 	for i := 0; i < assignCount && i < len(slots); i++ {
 		material := materials[i]
-		slot := slots[i*2] // 間隔分配，避免太密集
+		slot := slots[i*2] // assign every second slot to avoid overloading
 		
-		// 更新格子狀態
+		// update slot with material
 		slot.Status = entities.SlotStatusOccupied
 		slot.MaterialID = &material.ID
 		
-		// 更新材料狀態
+		// update material status
 		material.Status = entities.MaterialStatusInUse
 		
-		// 保存到數據庫
+		// save changes to the database
 		if err := db.Save(slot).Error; err != nil {
 			return err
 		}
@@ -111,7 +111,7 @@ func assignRandomMaterials(db *gorm.DB, materials []*entities.Material, slots []
 			return err
 		}
 		
-		// 創建操作記錄
+		// create an operation record for the placement
 		operation := &entities.Operation{
 			ID:         utils.GenerateUUID(),
 			Type:       entities.OperationTypePlacement,

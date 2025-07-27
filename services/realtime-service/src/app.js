@@ -8,9 +8,16 @@ const { createClient } = require('redis');
 
 const config = require('./config');
 const logger = require('./utils/logger');
-const RealtimeService = require('./services/realtimeService');
+
 const SocketController = require('./controllers/socketController');
 const KafkaController = require('./controllers/kafkaController');
+
+const authMiddleware = require('./middleware/auth');
+const rateLimitMiddleware = require('./middleware/rateLimit');
+
+const NotificationService = require('./services/notificationService');
+const RoomService = require('./services/roomService');
+const RealtimeService = require('./services/realtimeService');
 
 class App {
   constructor() {
@@ -24,6 +31,10 @@ class App {
       transports: ['websocket', 'polling']
     });
 
+    // Apply middleware
+    // this.io.use(authMiddleware);
+    // this.io.use(rateLimitMiddleware);
+
     const pubClient = createClient({ url: config.redis.url });
     const subClient = pubClient.duplicate();
 
@@ -31,7 +42,9 @@ class App {
       this.io.adapter(createAdapter(pubClient, subClient));
     });
 
-    this.realtimeService = new RealtimeService(this.io);
+    this.notificationService = new NotificationService();
+    this.roomService = new RoomService(this.io);
+    this.realtimeService = new RealtimeService(this.io, this.notificationService, this.roomService);
     this.socketController = new SocketController(this.io, this.realtimeService);
     this.kafkaController = new KafkaController(this.realtimeService);
   }
@@ -40,7 +53,7 @@ class App {
     this.app.use(cors(config.cors));
     this.app.use(express.json());
     
-    // 健康檢查
+    // health check endpoint
     this.app.get('/health', (req, res) => {
       res.json({ status: 'ok', timestamp: new Date().toISOString() });
     });
@@ -58,7 +71,7 @@ class App {
       this.setupMiddleware();
       this.setupSocketHandlers();
       
-      // 啟動 Kafka 消費者
+      // start the realtime service
       await this.kafkaController.start();
       
       this.server.listen(config.port, () => {
@@ -80,7 +93,7 @@ class App {
   }
 }
 
-// 優雅關閉
+// handle shutdown signals
 process.on('SIGINT', async () => {
   await app.stop();
   process.exit(0);

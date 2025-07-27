@@ -1,3 +1,8 @@
+/* 
+    * AlertService is responsible for sending alerts based on shelf health checks.
+    * It uses the EventService to publish alerts to a message broker.
+    * It determines the severity of the alert based on the health score of the shelf.
+*/
 package services
 
 import (

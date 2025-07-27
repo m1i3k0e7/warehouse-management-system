@@ -70,6 +70,11 @@ func Load() *Config {
 			Topic:   getEnv("KAFKA_TOPIC", "inventory_events"),
 		},
 		LogLevel: getEnv("LOG_LEVEL", "info"),
+		Service: ServiceConfig{
+			RetryCount: getEnv("RETRY_COUNT", "5"),
+			RetryDelay:  getEnv("RETRY_DELAY", "2s"),
+			AllowOrigins: getEnv("ALLOW_ORIGINS", ""),
+		},
 	}
 }
 

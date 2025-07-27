@@ -1,12 +1,16 @@
 const { Kafka } = require('kafkajs');
 const logger = require('../utils/logger');
+const { INVENTORY_EVENTS, SHELF_EVENTS, SYSTEM_EVENTS } = require('../events/types');
+const InventoryEventHandler = require('../events/handlers/inventoryHandler');
+const SystemEventHandler = require('../events/handlers/systemHandler');
+const {config} = require('../config');
 
 class KafkaController {
   constructor(realtimeService) {
     this.realtimeService = realtimeService;
     this.kafka = Kafka({
-      clientId: 'realtime-service',
-      brokers: process.env.KAFKA_BROKERS?.split(',') || ['localhost:9092'],
+      clientId: config.kafka.clientId || 'realtime-service',
+      brokers: config.kafka.brokers?.split(',') || ['localhost:9092'],
       retry: {
         initialRetryTime: 100,
         retries: 8
@@ -14,11 +18,13 @@ class KafkaController {
     });
     
     this.consumer = this.kafka.consumer({ 
-      groupId: 'realtime-service-group',
+      groupId: config.kafka.groupId || 'realtime-service-group',
       sessionTimeout: 30000,
       heartbeatInterval: 3000
     });
     
+    this.inventoryEventHandler = new InventoryEventHandler(realtimeService);
+    this.systemEventHandler = new SystemEventHandler(realtimeService);
     this.isRunning = false;
   }
 
@@ -26,14 +32,9 @@ class KafkaController {
     try {
       await this.consumer.connect();
       
-      // 訂閱所有庫存相關事件
+      // subscribe to multiple topics
       await this.consumer.subscribe({ 
-        topics: [
-          'inventory_events',
-          'shelf_events', 
-          'system_alerts',
-          'audit_logs'
-        ],
+        topics: Object.values(INVENTORY_EVENTS).concat(Object.values(SHELF_EVENTS), Object.values(SYSTEM_EVENTS)),
         fromBeginning: false 
       });
 
@@ -43,7 +44,7 @@ class KafkaController {
             await this.handleMessage(topic, message);
           } catch (error) {
             logger.error('Error processing Kafka message:', error);
-            // 在生產環境中，這裡可以將失敗的消息發送到死信隊列
+            // in production, you might want to handle retries or dead-letter queues
           }
         },
       });
@@ -62,123 +63,21 @@ class KafkaController {
     
     logger.info(`Processing Kafka message`, { topic, eventType });
 
-    switch (topic) {
-      case 'inventory_events':
-        await this.handleInventoryEvent(eventData);
+    switch (eventType) {
+      case INVENTORY_EVENTS.MATERIAL_PLACED:
+      case INVENTORY_EVENTS.MATERIAL_REMOVED:
+      case INVENTORY_EVENTS.MATERIAL_MOVED:
+        await this.inventoryEventHandler.handle(eventType, eventData);
         break;
-        
-      case 'shelf_events':
-        await this.handleShelfEvent(eventData);
+      case SHELF_EVENTS.SHELF_STATUS_CHANGED:
+      case SHELF_EVENTS.SHELF_HEALTH_ALERT:
+      case SYSTEM_EVENTS.SYSTEM_ALERT:
+      case SYSTEM_EVENTS.AUDIT_LOG:
+        await this.systemEventHandler.handle(eventType, eventData);
         break;
-        
-      case 'system_alerts':
-        await this.handleSystemAlert(eventData);
-        break;
-        
-      case 'audit_logs':
-        await this.handleAuditLog(eventData);
-        break;
-        
       default:
-        logger.warn(`Unknown topic: ${topic}`);
+        logger.warn(`Unknown event type received: ${eventType} on topic ${topic}`);
     }
-  }
-
-  async handleInventoryEvent(eventData) {
-    const { event_type, material_id, slot_id, shelf_id, operator_id } = eventData;
-    
-    switch (event_type) {
-      case 'material.placed':
-        await this.realtimeService.broadcastInventoryUpdate({
-          shelf_id,
-          event_type: 'material_placed',
-          slot_id,
-          material_id,
-          operator_id,
-          timestamp: eventData.timestamp
-        });
-        break;
-        
-      case 'material.removed':
-        await this.realtimeService.broadcastInventoryUpdate({
-          shelf_id,
-          event_type: 'material_removed', 
-          slot_id,
-          material_id,
-          operator_id,
-          timestamp: eventData.timestamp
-        });
-        break;
-        
-      case 'material.moved':
-        // 發送移除和放置兩個事件
-        await this.realtimeService.broadcastInventoryUpdate({
-          shelf_id,
-          event_type: 'material_removed',
-          slot_id: eventData.from_slot_id,
-          material_id,
-          operator_id,
-          timestamp: eventData.timestamp
-        });
-        
-        await this.realtimeService.broadcastInventoryUpdate({
-          shelf_id,
-          event_type: 'material_placed',
-          slot_id,
-          material_id,
-          operator_id,
-          timestamp: eventData.timestamp
-        });
-        break;
-    }
-  }
-
-  async handleShelfEvent(eventData) {
-    const { event_type, shelf_id } = eventData;
-    
-    switch (event_type) {
-      case 'shelf.status_changed':
-        // 廣播料架狀態變更
-        this.realtimeService.broadcastShelfStatusChange({
-          shelf_id,
-          old_status: eventData.old_status,
-          new_status: eventData.new_status,
-          timestamp: eventData.timestamp
-        });
-        break;
-        
-      case 'shelf.health_alert':
-        // 廣播健康告警
-        this.realtimeService.broadcastHealthAlert(eventData);
-        break;
-    }
-  }
-
-  async handleSystemAlert(eventData) {
-    const { alert_type, severity, message, metadata } = eventData;
-    
-    // 廣播系統告警到管理後台
-    this.realtimeService.broadcastSystemAlert({
-      type: alert_type,
-      severity,
-      message,
-      metadata,
-      timestamp: eventData.timestamp
-    });
-    
-    // 如果是嚴重告警，也廣播到相關料架的工作人員
-    if (severity === 'critical' && metadata.shelf_id) {
-      this.realtimeService.broadcastToShelf(metadata.shelf_id, {
-        type: 'critical_alert',
-        message,
-        timestamp: eventData.timestamp
-      });
-    }
-  }
-
-  async handleAuditLog(eventData) {
-    // 將審計日誌發送到管理後台
-    this.realtimeService.broadcastAuditLog(eventData);
   }
 
   async stop() {

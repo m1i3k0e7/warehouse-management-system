@@ -19,6 +19,10 @@ const config = {
     // Add other services here as needed
   },
   logLevel: process.env.LOG_LEVEL || 'info',
+  rateLimit: {
+    requests: parseInt(process.env.RATE_LIMIT_REQUESTS || '100', 10), // allowed requests per window
+    window: parseInt(process.env.RATE_LIMIT_WINDOW || '60', 10),     // limit window in seconds
+  },
 };
 
 module.exports = config;

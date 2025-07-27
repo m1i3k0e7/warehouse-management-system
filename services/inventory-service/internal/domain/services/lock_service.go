@@ -1,3 +1,7 @@
+/*
+    * LockService provides distributed locking functionality using Redis.
+    * It allows acquiring and releasing locks to ensure that only one instance of a service can perform a specific operation at a time.
+*/
 package services
 
 import (
@@ -22,7 +26,7 @@ func (s *LockService) AcquireLock(ctx context.Context, key string, expiration ti
     lockKey := fmt.Sprintf("lock:%s", key)
     lockValue := fmt.Sprintf("%d", time.Now().UnixNano())
     
-    // 嘗試獲取鎖
+    // Try to acquire the lock using SETNX
     success, err := s.redisClient.SetNX(ctx, lockKey, lockValue, expiration).Result()
     if err != nil {
         return nil, err
@@ -32,7 +36,7 @@ func (s *LockService) AcquireLock(ctx context.Context, key string, expiration ti
         return nil, fmt.Errorf("failed to acquire lock for key: %s", key)
     }
     
-    // 返回解鎖函數
+    // Return an unlock function that releases the lock
     unlock := func() {
         script := `
             if redis.call("get", KEYS[1]) == ARGV[1] then

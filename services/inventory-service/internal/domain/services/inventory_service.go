@@ -6,11 +6,12 @@ import (
 	"fmt"
 	"time"
     "encoding/json"
+	"github.com/google/uuid"
 
 	"warehouse/internal/domain/entities"
 	"warehouse/internal/domain/repositories"
 	"warehouse/pkg/errors"
-	"warehouse/pkg/logger"
+	"warehouse/pkg/utils"
 )
 
 type InventoryService struct {
@@ -55,7 +56,7 @@ type MoveMaterialCommand struct {
 type ReserveSlotsCommand struct {
 	SlotIDs    []string `json:"slot_ids" validate:"required"`
 	OperatorID string   `json:"operator_id" validate:"required"`
-	Duration   int      `json:"duration"` // 預留時間（分鐘）
+	Duration   int      `json:"duration"` // reservation duration in minutes
 	Purpose    string   `json:"purpose"`
 }
 
@@ -85,14 +86,13 @@ func NewInventoryService(
 	}
 }
 
-// 增強版材料放置功能
 func (s *InventoryService) PlaceMaterial(ctx context.Context, cmd PlaceMaterialCommand) error {
-	// 1. 參數驗證
+	// validate command parameters
 	if err := s.validatePlaceMaterialCommand(cmd); err != nil {
 		return errors.NewValidationError("invalid command", err)
 	}
 
-	// 2. 獲取料架級別鎖
+	// acquire lock on the shelf
 	slot, err := s.slotRepo.GetByID(ctx, cmd.SlotID)
 	if err != nil {
 		return errors.NewNotFoundError("slot not found", err)
@@ -105,29 +105,28 @@ func (s *InventoryService) PlaceMaterial(ctx context.Context, cmd PlaceMaterialC
 	}
 	defer unlock()
 
-	// 3. 業務邏輯驗證
+	// validate preconditions for placing material
 	if err := s.validatePlacementPreconditions(ctx, cmd); err != nil {
 		return err
 	}
 
-	// 4. 執行放置操作
+	// execute the placement operation
 	operation, err := s.executePlaceMaterial(ctx, cmd)
 	if err != nil {
-		// 記錄失敗操作
+		// log the failed operation
 		s.auditService.LogFailedOperation(ctx, "place_material", cmd, err)
 		return err
 	}
 
-	// 5. 檢查異常情況
+	// check for anomalies
 	s.checkForAnomalies(ctx, operation, cmd.SensorData)
 
-	// 6. 記錄審計日誌
+	// log the successful operation
 	s.auditService.LogSuccessfulOperation(ctx, operation)
 
 	return nil
 }
 
-// 材料移除功能
 func (s *InventoryService) RemoveMaterial(ctx context.Context, cmd RemoveMaterialCommand) error {
 	slot, err := s.slotRepo.GetByID(ctx, cmd.SlotID)
 	if err != nil {
@@ -148,9 +147,8 @@ func (s *InventoryService) RemoveMaterial(ctx context.Context, cmd RemoveMateria
 	return s.executeRemoveMaterial(ctx, cmd, slot)
 }
 
-// 材料移動功能
 func (s *InventoryService) MoveMaterial(ctx context.Context, cmd MoveMaterialCommand) error {
-	// 獲取源格子和目標格子
+	// get the source and target slots
 	fromSlot, err := s.slotRepo.GetByID(ctx, cmd.FromSlotID)
 	if err != nil {
 		return errors.NewNotFoundError("source slot not found", err)
@@ -161,7 +159,7 @@ func (s *InventoryService) MoveMaterial(ctx context.Context, cmd MoveMaterialCom
 		return errors.NewNotFoundError("target slot not found", err)
 	}
 
-	// 驗證移動條件
+	// validate the source and target slots status
 	if fromSlot.Status != entities.SlotStatusOccupied {
 		return errors.NewConflictError("source slot is empty", nil)
 	}
@@ -170,16 +168,15 @@ func (s *InventoryService) MoveMaterial(ctx context.Context, cmd MoveMaterialCom
 		return errors.NewConflictError("target slot is not empty", nil)
 	}
 
-	// 如果跨料架移動，需要獲取兩個鎖
+	// acquire locks on both source and target shelves
 	locks := s.acquireMultipleShelfLocks(ctx, []string{fromSlot.ShelfID, toSlot.ShelfID})
 	defer s.releaseMultipleLocks(locks)
 
 	return s.executeMoveMaterial(ctx, cmd, fromSlot, toSlot)
 }
 
-// 格子預留功能
 func (s *InventoryService) ReserveSlots(ctx context.Context, cmd ReserveSlotsCommand) error {
-	// 獲取所有相關料架的鎖
+	// acquire locks on all shelves involved in the reservation
 	shelfIDs := make([]string, 0)
 	slotShelfMap := make(map[string]string)
 
@@ -208,7 +205,6 @@ func (s *InventoryService) ReserveSlots(ctx context.Context, cmd ReserveSlotsCom
 	return s.executeReserveSlots(ctx, cmd, slotShelfMap)
 }
 
-// 智能尋找最佳格子
 func (s *InventoryService) FindOptimalSlot(ctx context.Context, materialType string, shelfID string) (*entities.Slot, error) {
 	slots, err := s.slotRepo.GetEmptySlotsByShelf(ctx, shelfID)
 	if err != nil {
@@ -219,17 +215,11 @@ func (s *InventoryService) FindOptimalSlot(ctx context.Context, materialType str
 		return nil, errors.NewNotFoundError("no empty slots available", nil)
 	}
 
-	// 智能選擇邏輯：
-	// 1. 優先選擇同類型材料附近的格子
-	// 2. 考慮人機工程學（中間位置優先）
-	// 3. 避免過於集中
-
 	return s.selectBestSlot(slots, materialType)
 }
 
-// 批量操作功能
 func (s *InventoryService) BatchPlaceMaterials(ctx context.Context, commands []PlaceMaterialCommand) error {
-	// 按料架分組
+	// group commands by shelf
 	shelfGroups := s.groupCommandsByShelf(commands)
 
 	for shelfID, shelfCommands := range shelfGroups {
@@ -238,9 +228,9 @@ func (s *InventoryService) BatchPlaceMaterials(ctx context.Context, commands []P
 		if err != nil {
 			return errors.NewConflictError(fmt.Sprintf("failed to lock shelf %s", shelfID), err)
 		}
+		defer unlock()
 
 		err = s.executeBatchPlacement(ctx, shelfCommands)
-		unlock()
 
 		if err != nil {
 			return err
@@ -250,7 +240,6 @@ func (s *InventoryService) BatchPlaceMaterials(ctx context.Context, commands []P
 	return nil
 }
 
-// 料架健康檢查
 func (s *InventoryService) HealthCheckShelf(ctx context.Context, shelfID string) (*entities.ShelfHealth, error) {
 	slots, err := s.slotRepo.GetByShelfID(ctx, shelfID)
 	if err != nil {
@@ -279,7 +268,7 @@ func (s *InventoryService) HealthCheckShelf(ctx context.Context, shelfID string)
 
 	health.HealthScore = float64(health.HealthySlots) / float64(health.TotalSlots) * 100
 
-	// 如果健康分數低於閾值，發送告警
+	// send health alert if score is below threshold
 	if health.HealthScore < 95.0 {
 		s.alertService.SendShelfHealthAlert(ctx, health)
 	}
@@ -287,14 +276,13 @@ func (s *InventoryService) HealthCheckShelf(ctx context.Context, shelfID string)
 	return health, nil
 }
 
-// 處理格子錯誤
 func (s *InventoryService) HandleSlotError(ctx context.Context, slotID string, errorType string) error {
 	slot, err := s.slotRepo.GetByID(ctx, slotID)
 	if err != nil {
 		return err
 	}
 
-	// 記錄錯誤
+	// log the error
 	alert := &entities.Alert{
 		ID:        generateUUID(),
 		Type:      "slot_error",
@@ -310,20 +298,19 @@ func (s *InventoryService) HandleSlotError(ctx context.Context, slotID string, e
 		logger.Error("Failed to create alert", err)
 	}
 
-	// 根據錯誤類型決定處理方式
+	// handle the error based on its type
 	switch errorType {
-	case "sensor_error":
-		return s.markSlotForMaintenance(ctx, slotID, "sensor malfunction")
-	case "weight_mismatch":
-		return s.triggerManualVerification(ctx, slotID)
-	default:
-		return s.markSlotForInvestigation(ctx, slotID, errorType)
+		case "sensor_error":
+			return s.markSlotForMaintenance(ctx, slotID, "sensor malfunction")
+		case "weight_mismatch":
+			return s.triggerManualVerification(ctx, slotID)
+		default:
+			return s.markSlotForInvestigation(ctx, slotID, errorType)
 	}
 }
 
-// 更新料架狀態
 func (s *InventoryService) UpdateShelfStatus(ctx context.Context, shelfID string, status string) error {
-	// 更新緩存中的料架狀態
+	// update the shelf status in the cache
 	cacheKey := fmt.Sprintf("shelf_status:%s", shelfID)
 	statusData := map[string]interface{}{
 		"status":     status,
@@ -334,12 +321,12 @@ func (s *InventoryService) UpdateShelfStatus(ctx context.Context, shelfID string
 }
 
 func (s *InventoryService) GetShelfStatus(ctx context.Context, shelfID string) (*entities.ShelfStatus, error) {
-	// 先嘗試從緩存獲取
+	// attempt to get the shelf status from the cache
 	if status, err := s.cacheService.GetShelfStatus(ctx, shelfID); err == nil && status != nil {
 		return status, nil
 	}
 
-	// 從數據庫查詢
+	// retrieve the shelf slots from the database
 	slots, err := s.slotRepo.GetByShelfID(ctx, shelfID)
 	if err != nil {
 		return nil, errors.NewInternalError("failed to get shelf slots", err)
@@ -364,7 +351,7 @@ func (s *InventoryService) GetShelfStatus(ctx context.Context, shelfID string) (
 		}
 	}
 
-	// 更新緩存
+	// update the cache with the current shelf status
 	s.cacheService.SetShelfStatus(ctx, status)
 
 	return status, nil
@@ -404,7 +391,12 @@ func (s *InventoryService) executePlaceMaterial(ctx context.Context, cmd PlaceMa
 	if err != nil {
 		return nil, errors.NewInternalError("failed to start transaction", err)
 	}
-	defer tx.Rollback()
+	defer func() {
+		if err != nil {
+			tx.Rollback()
+			// s.failedEventRepo.RecordFailedEvent(ctx, "PlaceMaterial", cmd, err)
+		}
+	}()
 
 	slot, _ := s.slotRepo.GetByID(ctx, cmd.SlotID)
 	material, _ := s.materialRepo.GetByBarcode(ctx, cmd.MaterialBarcode)
@@ -467,7 +459,11 @@ func (s *InventoryService) executeRemoveMaterial(ctx context.Context, cmd Remove
 	if err != nil {
 		return errors.NewInternalError("failed to start transaction", err)
 	}
-	defer tx.Rollback()
+	defer func() {
+		if err != nil {
+			tx.Rollback()
+		}
+	}()
 
 	material, err := s.materialRepo.GetByID(ctx, *slot.MaterialID)
 	if err != nil {
@@ -519,7 +515,11 @@ func (s *InventoryService) executeMoveMaterial(ctx context.Context, cmd MoveMate
 	if err != nil {
 		return errors.NewInternalError("failed to start transaction", err)
 	}
-	defer tx.Rollback()
+	defer func() {
+		if err != nil {
+			tx.Rollback()
+		}
+	}()
 
 	material, err := s.materialRepo.GetByID(ctx, *fromSlot.MaterialID)
 	if err != nil {
@@ -573,7 +573,11 @@ func (s *InventoryService) executeReserveSlots(ctx context.Context, cmd ReserveS
 	if err != nil {
 		return errors.NewInternalError("failed to start transaction", err)
 	}
-	defer tx.Rollback()
+	defer func() {
+		if err != nil {
+			tx.Rollback()
+		}
+	}()
 
 	for _, slotID := range cmd.SlotIDs {
 		slot, err := s.slotRepo.GetByID(ctx, slotID)
@@ -604,9 +608,15 @@ func (s *InventoryService) executeReserveSlots(ctx context.Context, cmd ReserveS
 func (s *InventoryService) selectBestSlot(slots []*entities.Slot, materialType string) (*entities.Slot, error) {
 	// This is a simple implementation. A more advanced version could consider
 	// proximity to other materials of the same type, operator ergonomics, etc.
-	if len(slots) > 0 {
-		return slots[0], nil
+
+	for _, slot := range slots {
+		if slot.Status == entities.SlotStatusEmpty {
+			if slot.IsSuitableForMaterialType(materialType) {
+				return slot, nil
+			}
+		}
 	}
+
 	return nil, fmt.Errorf("no empty slots")
 }
 
@@ -627,7 +637,11 @@ func (s *InventoryService) executeBatchPlacement(ctx context.Context, commands [
 	if err != nil {
 		return errors.NewInternalError("failed to start transaction", err)
 	}
-	defer tx.Rollback()
+	defer func() {
+		if err != nil {
+			tx.Rollback()
+		}
+	}()
 
 	for _, cmd := range commands {
 		_, err := s.executePlaceMaterial(ctx, cmd)
@@ -695,6 +709,5 @@ func (s *InventoryService) releaseMultipleLocks(unlockFuncs []func()) {
 }
 
 func generateUUID() string {
-    // In a real application, you would use a library like github.com/google/uuid
-    return "some-uuid"
+    return uuid.generateUUID()
 }

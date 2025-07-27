@@ -21,45 +21,45 @@ import (
 )
 
 func main() {
-    // 加載配置
+    // Load configuration
     cfg := config.Load()
     
-    // 初始化日誌
+    // Initialize logger
     logger.Init(cfg.LogLevel)
     
-    // 初始化數據庫
+    // Initialize database connection
     db, err := database.NewPostgresConnection(cfg.Database)
     if err != nil {
         log.Fatal("Failed to connect to database:", err)
     }
     defer db.Close()
     
-    // 初始化 Redis
+    // Initialize Redis client
     redisClient := cache.NewRedisClient(cfg.Redis)
     defer redisClient.Close()
     
-    // 初始化 Kafka 事件服務
+    // Initialize Kafka event service
     eventService, err := services.NewEventService(cfg.Kafka.Brokers, cfg.Kafka.Topic)
     if err != nil {
         log.Fatal("Failed to initialize event service:", err)
     }
     defer eventService.Close()
     
-    // 初始化所有服務
+    // Initialize all other services
     lockService := services.NewLockService(redisClient)
     cacheService := services.NewCacheService(redisClient)
-    retryService := services.NewRetryService(3, time.Second*2)
+    retryService := services.NewRetryService(cfg.ServiceConfig.RetryCount, cfg.ServiceConfig.RetryDelay)
     auditService := services.NewAuditService(eventService)
     alertService := services.NewAlertService(eventService)
     
-    // 初始化 repositories
+    // Initialize repositories
     materialRepo := repositories.NewMaterialRepository(db)
     slotRepo := repositories.NewSlotRepository(db)
     operationRepo := repositories.NewOperationRepository(db)
     alertRepo := repositories.NewAlertRepository(db)
     failedEventRepo := repositories.NewFailedEventRepository(db)
     
-    // 初始化庫存服務
+    // Initialize inventory service
     inventoryService := services.NewInventoryService(
         materialRepo,
         slotRepo,
@@ -73,17 +73,17 @@ func main() {
         failedEventRepo,
     )
     
-    // 初始化 MQTT 處理器
+    // Initialize MQTT handler
     mqttHandler := mqtt.NewMQTTHandler(cfg.MQTT.BrokerURL, inventoryService, retryService)
     if err := mqttHandler.Connect(); err != nil {
         log.Fatal("Failed to connect to MQTT broker:", err)
     }
     
-    // 初始化 HTTP 路由
+    // Initialize http router
     gin.SetMode(cfg.Server.Mode)
     r := router.SetupRouter(db, redisClient, eventService)
     
-    // 配置 HTTP 服務器
+    // configure http server
     srv := &http.Server{
         Addr:         ":" + cfg.Server.Port,
         Handler:      r,
@@ -92,7 +92,7 @@ func main() {
         IdleTimeout:  cfg.Server.IdleTimeout,
     }
     
-    // 啟動服務器
+    // start the server
     go func() {
         if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
             log.Fatalf("Failed to start server: %v", err)
@@ -101,7 +101,7 @@ func main() {
     
     logger.Info("Inventory service started successfully")
     
-    // 優雅關閉
+    // handle shutdown signals
     quit := make(chan os.Signal, 1)
     signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
     <-quit

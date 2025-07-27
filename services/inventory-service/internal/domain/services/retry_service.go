@@ -1,3 +1,7 @@
+/*
+    * Retry Service provides a mechanism to execute operations with retry logic.
+    * It allows for exponential backoff and a maximum number of retries.
+*/
 package services
 
 import (

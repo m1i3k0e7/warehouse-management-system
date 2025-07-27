@@ -1,3 +1,8 @@
+/* 
+    * Audit Service for logging operations in the inventory management system.
+    * It captures successful and failed operations, including metadata and operator information.
+    * The logs are published to an event stream for further processing or storage.
+*/
 package services
 
 import (

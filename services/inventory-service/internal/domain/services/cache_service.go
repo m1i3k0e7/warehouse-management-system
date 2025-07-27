@@ -1,3 +1,7 @@
+/*
+    * Cache Service provides caching capabilities for inventory data using Redis, allowing for quick access to frequently used data.
+    * It supports setting, getting, and deleting cache entries, as well as specific methods for managing shelf statuses.
+*/
 package services
 
 import (

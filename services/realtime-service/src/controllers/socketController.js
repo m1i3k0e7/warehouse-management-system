@@ -7,23 +7,23 @@ class SocketController {
   }
 
   handleConnection(socket) {
-    // 處理加入料架房間
+    // handle new connection
     socket.on('join_shelf', (data) => {
       const { shelfId, operatorId } = data;
       this.realtimeService.joinShelfRoom(socket, shelfId, operatorId);
     });
 
-    // 處理操作請求
+    // handle shelf operation requests
     socket.on('operation_request', (data) => {
       this.realtimeService.handleOperationRequest(socket, data);
     });
 
-    // 處理斷開連接
+    // handle shelf disconnection
     socket.on('disconnect', () => {
       this.realtimeService.handleDisconnect(socket);
     });
 
-    // 處理心跳
+    // handle ping-pong for heartbeat
     socket.on('ping', () => {
       socket.emit('pong');
     });

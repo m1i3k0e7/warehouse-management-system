@@ -30,3 +30,8 @@ type Slot struct {
 func (Slot) TableName() string {
 	return "slots"
 }
+
+func (Slot) IsSuitableForMaterialType(materialType string) bool {
+	// add logic to determine if the slot is suitable for the given material type
+	return true
+}

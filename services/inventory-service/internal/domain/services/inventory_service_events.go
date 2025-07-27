@@ -9,7 +9,6 @@ import (
     "warehouse/pkg/logger"
 )
 
-// 發布材料放置事件
 func (s *InventoryService) publishMaterialPlacedEvent(ctx context.Context, operation *entities.Operation) {
     event := events.NewMaterialPlacedEvent(
         operation.MaterialID,
@@ -20,12 +19,10 @@ func (s *InventoryService) publishMaterialPlacedEvent(ctx context.Context, opera
     
     if err := s.eventService.PublishEvent(ctx, "material.placed", event); err != nil {
         logger.Error("Failed to publish material placed event", err)
-        // 發布失敗不影響主流程，但記錄日誌用於後續補償
         s.scheduleEventRetry(ctx, "material.placed", event)
     }
 }
 
-// 發布材料移除事件
 func (s *InventoryService) publishMaterialRemovedEvent(ctx context.Context, operation *entities.Operation) {
     event := events.NewMaterialRemovedEvent(
         operation.MaterialID,
@@ -40,7 +37,6 @@ func (s *InventoryService) publishMaterialRemovedEvent(ctx context.Context, oper
     }
 }
 
-// 發布材料移動事件
 func (s *InventoryService) publishMaterialMovedEvent(ctx context.Context, operation *entities.Operation, fromSlotID string) {
     event := &events.MaterialMovedEvent{
         BaseEvent: events.BaseEvent{
@@ -63,7 +59,6 @@ func (s *InventoryService) publishMaterialMovedEvent(ctx context.Context, operat
     }
 }
 
-// 發布料架狀態變更事件
 func (s *InventoryService) publishShelfStatusChangedEvent(ctx context.Context, shelfID string, oldStatus, newStatus string) {
     event := &events.ShelfStatusChangedEvent{
         BaseEvent: events.BaseEvent{
@@ -83,7 +78,6 @@ func (s *InventoryService) publishShelfStatusChangedEvent(ctx context.Context, s
     }
 }
 
-// 發布系統告警事件
 func (s *InventoryService) publishSystemAlertEvent(ctx context.Context, alertType, severity, message string, metadata map[string]interface{}) {
     event := &events.SystemAlertEvent{
         BaseEvent: events.BaseEvent{
@@ -105,9 +99,8 @@ func (s *InventoryService) publishSystemAlertEvent(ctx context.Context, alertTyp
 }
 
 
-// 事件重試調度器
 func (s *InventoryService) scheduleEventRetry(ctx context.Context, topic, eventType string, event interface{}, originalErr error) {
-	// 將失敗的事件存儲到數據庫的死信隊列中
+	// save the failed event to the dead-letter queue (DLQ)
 	failedEvent, err := entities.NewFailedEvent(generateUUID(), topic, eventType, event, originalErr)
 	if err != nil {
 		logger.Error("Failed to create failed event", err)
