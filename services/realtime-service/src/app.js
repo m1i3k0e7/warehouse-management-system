@@ -32,8 +32,8 @@ class App {
     });
 
     // Apply middleware
-    // this.io.use(authMiddleware);
-    // this.io.use(rateLimitMiddleware);
+    this.io.use(authMiddleware);
+    this.io.use(rateLimitMiddleware);
 
     const pubClient = createClient({ url: config.redis.url });
     const subClient = pubClient.duplicate();

@@ -12,8 +12,8 @@ class KafkaController {
       clientId: config.kafka.clientId || 'realtime-service',
       brokers: config.kafka.brokers?.split(',') || ['localhost:9092'],
       retry: {
-        initialRetryTime: 100,
-        retries: 8
+        initialRetryTime: config.kafka.retryInitialTime,
+        retries: config.kafka.retryRetries
       }
     });
     

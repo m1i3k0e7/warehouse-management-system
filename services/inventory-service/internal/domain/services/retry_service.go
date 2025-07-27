@@ -48,3 +48,7 @@ func (s *RetryService) ExecuteWithRetry(operation func() error, maxRetries int, 
     
     return fmt.Errorf("operation failed after %d attempts: %w", maxRetries, lastErr)
 }
+
+func (s *RetryService) Execute(operation func() error) error {
+    return s.ExecuteWithRetry(operation, s.maxRetries, s.baseDelay)
+}

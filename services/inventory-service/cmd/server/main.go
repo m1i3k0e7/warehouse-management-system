@@ -77,7 +77,14 @@ func main() {
     )
     
     // Initialize MQTT handler
-    mqttHandler := mqtt.NewMQTTHandler(cfg.MQTT.BrokerURL, inventoryService, retryService)
+    mqttHandler := mqtt.NewMQTTHandler(
+        cfg.MQTT.BrokerURL,
+        placeMaterialHandler,
+        removeMaterialHandler,
+        handleSlotErrorHandler,
+        updateShelfStatusHandler,
+        retryService,
+    )
     if err := mqttHandler.Connect(); err != nil {
         log.Fatal("Failed to connect to MQTT broker:", err)
     }

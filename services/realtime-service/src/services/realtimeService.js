@@ -57,7 +57,7 @@ class RealtimeService {
         operatorId,
         joinedAt: new Date().toISOString()
       };
-      await redis.set(`session:${socket.id}`, JSON.stringify(sessionData), 'EX', 3600); // expires in 3600 seconds (1 hour)
+      await redis.set(`session:${socket.id}`, JSON.stringify(sessionData), 'EX', config.redis.sessionExpiration);
 
       // send current shelf status to the client
       const shelfStatus = await this.getShelfStatus(shelfId);
@@ -156,7 +156,7 @@ class RealtimeService {
       
       // call the inventory API to get the latest status if not cached
       const apiStatus = await this.inventoryAPIService.getShelfStatus(shelfId);
-      await redis.set(`shelf_status:${shelfId}`, JSON.stringify(apiStatus), 'EX', 600); // expires in 600 seconds (10 minutes)
+      await redis.set(`shelf_status:${shelfId}`, JSON.stringify(apiStatus), 'EX', config.redis.shelfStatusCacheExpiration);
       return apiStatus;
     } catch (error) {
       logger.error('Failed to get shelf status:', error);
@@ -167,7 +167,7 @@ class RealtimeService {
   async updateRealtimeStats(shelfId, eventType) {
     const key = `stats:${shelfId}:${new Date().toISOString().slice(0, 10)}`;
     await redis.hincrby(key, eventType, 1);
-    await redis.expire(key, 86400 * 7); // set key to expire in 7 days
+    await redis.expire(key, config.redis.realtimeStatsExpiration);
   }
 
   async broadcastShelfStatusChange(data) {

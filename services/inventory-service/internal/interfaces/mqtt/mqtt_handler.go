@@ -1,14 +1,7 @@
-package mqtt
-
-import (
-    "context"
-    "encoding/json"
-    "fmt"
-    "time"
-    
-    mqtt "github.com/eclipse/paho.mqtt.golang"
+    "warehouse/internal/application/commands"
     "warehouse/internal/domain/services"
     "warehouse/pkg/logger"
+    "warehouse/internal/domain/entities"
 )
 
 // MQTT message structure for shelf events and status updates
@@ -35,13 +28,23 @@ type ShelfStatus struct {
 }
 
 type MQTTHandler struct {
-    client           mqtt.Client
-    inventoryService *services.InventoryService
-    topicPrefix      string
-    retryService     *services.RetryService
+    client                mqtt.Client
+    placeMaterialHandler  *commands.PlaceMaterialCommandHandler
+    removeMaterialHandler *commands.RemoveMaterialCommandHandler
+    handleSlotErrorHandler *commands.HandleSlotErrorCommandHandler
+    updateShelfStatusHandler *commands.UpdateShelfStatusCommandHandler
+    topicPrefix           string
+    retryService          *services.RetryService
 }
 
-func NewMQTTHandler(brokerURL string, inventoryService *services.InventoryService, retryService *services.RetryService) *MQTTHandler {
+func NewMQTTHandler(
+    brokerURL string, 
+    placeMaterialHandler *commands.PlaceMaterialCommandHandler,
+    removeMaterialHandler *commands.RemoveMaterialCommandHandler,
+    handleSlotErrorHandler *commands.HandleSlotErrorCommandHandler,
+    updateShelfStatusHandler *commands.UpdateShelfStatusCommandHandler,
+    retryService *services.RetryService,
+) *MQTTHandler {
     opts := mqtt.NewClientOptions()
     opts.AddBroker(brokerURL)
     opts.SetClientID("inventory-service")
@@ -61,10 +64,13 @@ func NewMQTTHandler(brokerURL string, inventoryService *services.InventoryServic
     client := mqtt.NewClient(opts)
     
     return &MQTTHandler{
-        client:           client,
-        inventoryService: inventoryService,
-        topicPrefix:      "warehouse/shelf",
-        retryService:     retryService,
+        client:                client,
+        placeMaterialHandler:  placeMaterialHandler,
+        removeMaterialHandler: removeMaterialHandler,
+        handleSlotErrorHandler: handleSlotErrorHandler,
+        updateShelfStatusHandler: updateShelfStatusHandler,
+        topicPrefix:           "warehouse/shelf",
+        retryService:          retryService,
     }
 }
 
@@ -97,9 +103,9 @@ func (h *MQTTHandler) handleShelfEvent(client mqtt.Client, msg mqtt.Message) {
     }
     
     // handle the event with retry logic
-    h.retryService.ExecuteWithRetry(func() error {
+    h.retryService.Execute(func() error {
         return h.processShelfEvent(&event)
-    }, 3, time.Second*2)
+    })
 }
 
 func (h *MQTTHandler) processShelfEvent(event *ShelfEvent) error {
@@ -107,28 +113,27 @@ func (h *MQTTHandler) processShelfEvent(event *ShelfEvent) error {
     defer ctx.Done()
     
     switch event.EventType {
-        case "material_detected":
-            cmd := services.PlaceMaterialCommand{
+        case services.EventTypeMaterialDetected:
+            cmd := commands.PlaceMaterialCommand{
                 MaterialBarcode: event.MaterialBarcode,
                 SlotID:         event.SlotID,
                 OperatorID:     "SHELF_SYSTEM",
-                SensorData: &services.SensorData{
-                    Weight:      event.SensorData.Weight,
-                    Temperature: event.SensorData.Temperature,
-                    Humidity:    event.SensorData.Humidity,
-                },
             }
-            return h.inventoryService.PlaceMaterial(ctx, cmd)
+            return h.placeMaterialHandler.Handle(ctx, cmd)
             
-        case "material_removed":
-            cmd := services.RemoveMaterialCommand{
+        case services.EventTypeMaterialRemoved:
+            cmd := commands.RemoveMaterialCommand{
                 SlotID:     event.SlotID,
                 OperatorID: "SHELF_SYSTEM",
             }
-            return h.inventoryService.RemoveMaterial(ctx, cmd)
+            return h.removeMaterialHandler.Handle(ctx, cmd)
             
-        case "slot_error":
-            return h.inventoryService.HandleSlotError(ctx, event.SlotID, "sensor_error")
+        case services.EventTypeSlotError:
+            cmd := commands.HandleSlotErrorCommand{
+                SlotID:    event.SlotID,
+                ErrorType: string(entities.AlertTypeSlotError),
+            }
+            return h.handleSlotErrorHandler.Handle(ctx, cmd)
             
         default:
             return fmt.Errorf("unknown event type: %s", event.EventType)
@@ -143,5 +148,11 @@ func (h *MQTTHandler) handleShelfStatus(client mqtt.Client, msg mqtt.Message) {
     }
     
     ctx := context.Background()
-    h.inventoryService.UpdateShelfStatus(ctx, status.ShelfID, status.Status)
+    cmd := commands.UpdateShelfStatusCommand{
+        ShelfID: status.ShelfID,
+        Status:  status.Status,
+    }
+    if err := h.updateShelfStatusHandler.Handle(ctx, cmd); err != nil {
+        logger.Error("Failed to handle shelf status update", err)
+    }
 }
