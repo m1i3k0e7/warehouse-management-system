@@ -21,9 +21,8 @@ type Slot struct {
 	Status     SlotStatus `json:"status"`
 	MaterialID *string    `json:"material_id,omitempty"`
 	UpdatedAt  time.Time  `json:"updated_at"`
-	Version    int64      `json:"version"` // 樂觀鎖版本號
+	Version    int64      `json:"version"`
 	
-	// 關聯
 	Material *Material `json:"material,omitempty" gorm:"foreignKey:MaterialID"`
 }
 

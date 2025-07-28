@@ -1,3 +1,6 @@
+package mqtt
+
+import (
     "warehouse/internal/application/commands"
     "warehouse/internal/domain/services"
     "warehouse/pkg/logger"

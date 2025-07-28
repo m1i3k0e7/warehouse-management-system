@@ -32,7 +32,6 @@ type Operation struct {
 	Timestamp  time.Time       `json:"timestamp"`
 	Status     OperationStatus `json:"status"`
 	
-	// 關聯
 	Material *Material `json:"material,omitempty" gorm:"foreignKey:MaterialID"`
 	Slot     *Slot     `json:"slot,omitempty" gorm:"foreignKey:SlotID"`
 }
