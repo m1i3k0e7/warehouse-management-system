@@ -92,6 +92,7 @@ func (s *InventoryService) PlaceMaterial(ctx context.Context, cmd PlaceMaterialC
 
 	// log the successful operation
 	s.auditService.LogSuccessfulOperation(ctx, operation)
+	
 	return nil
 }
 

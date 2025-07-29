@@ -49,15 +49,26 @@ class RealtimeService {
 
   async joinShelfRoom(socket, shelfId, operatorId) {
     try {
-      this.roomService.joinRoom(socket, `shelf_${shelfId}`);
-      
-      // record session data in Redis
-      const sessionData = {
+      const newRoomName = `shelf_${shelfId}`;
+      const sessionData = await redis.get(`session:${socket.id}`);
+      let session = sessionData ? JSON.parse(sessionData) : null;
+
+      // Check if the user is already in a shelf room
+      if (session && session.currentShelfRoom && session.currentShelfRoom !== newRoomName) {
+        logger.info(`Client ${socket.id} leaving old room: ${session.currentShelfRoom}`);
+        this.roomService.leaveRoom(socket, session.currentShelfRoom); // Leave the old room
+      }
+
+      this.roomService.joinRoom(socket, newRoomName); // Join the new room
+
+      // Update session data in Redis
+      session = {
         shelfId,
         operatorId,
-        joinedAt: new Date().toISOString()
+        joinedAt: new Date().toISOString(),
+        currentShelfRoom: newRoomName, // Store the current shelf room
       };
-      await redis.set(`session:${socket.id}`, JSON.stringify(sessionData), 'EX', config.redis.sessionExpiration);
+      await redis.set(`session:${socket.id}`, JSON.stringify(session), 'EX', config.redis.sessionExpiration);
 
       // send current shelf status to the client
       const shelfStatus = await this.getShelfStatus(shelfId);
@@ -66,7 +77,8 @@ class RealtimeService {
       logger.info(`Client joined shelf room`, { 
         socketId: socket.id, 
         shelfId, 
-        operatorId 
+        operatorId, 
+        currentRoom: newRoomName,
       });
     } catch (error) {
       logger.error('Failed to join shelf room:', error);
@@ -75,9 +87,11 @@ class RealtimeService {
   }
 
   async handleOperationRequest(socket, data) {
+    const { requestId, ...operationData } = data; // Extract requestId
     const sessionData = await redis.get(`session:${socket.id}`);
     if (!sessionData) {
       socket.emit('operation_response', {
+        requestId, // Include requestId in response
         success: false,
         error: 'Session not found' 
       });
@@ -87,18 +101,20 @@ class RealtimeService {
 
     try {
       const result = await this.processOperation({
-        ...data,
+        ...operationData,
         operatorId: session.operatorId,
         shelfId: session.shelfId
       });
 
       socket.emit('operation_response', {
+        requestId, // Include requestId in response
         success: true, 
         data: result 
       });
     } catch (error) {
       logger.error('Operation request failed:', error);
-      socket.emit('operation_response', { 
+      socket.emit('operation_response', {
+        requestId, // Include requestId in response
         success: false, 
         error: error.message 
       });
@@ -138,6 +154,9 @@ class RealtimeService {
     const sessionData = await redis.get(`session:${socket.id}`);
     if (sessionData) {
       const session = JSON.parse(sessionData);
+      if (session.currentShelfRoom) {
+        this.roomService.leaveRoom(socket, session.currentShelfRoom); // Leave the current room
+      }
       await redis.del(`session:${socket.id}`);
       
       logger.info(`Client disconnected`, { 

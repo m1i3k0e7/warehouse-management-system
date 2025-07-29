@@ -129,7 +129,7 @@ function MaterialOperations() {
     try {
       const response = await sendOperationRequest(payload);
       dispatch(executeOperationSuccess(response)); // Use response from backend if available
-      dispatch(addOperationToHistory({ ...payload, timestamp: new Date().toISOString(), status: 'sent' }));
+      dispatch(addOperationToHistory({ ...payload, timestamp: new Date().toISOString(), status: 'success' }));
       
       // After successful operation, update the displayed shelf status
       if (targetShelfId) {
@@ -147,6 +147,7 @@ function MaterialOperations() {
     } catch (err) {
       dispatch(executeOperationFailure(err.message));
       logger.error('Operation failed:', err);
+      dispatch(addOperationToHistory({ ...payload, timestamp: new Date().toISOString(), status: 'failed', error: err.message }));
     }
   };
 
@@ -189,7 +190,10 @@ function MaterialOperations() {
                   fullWidth
                   label="Material Barcode"
                   value={materialBarcode}
-                  onChange={(e) => setMaterialBarcode(e.target.value)}
+                  onChange={(e) => {
+                    setMaterialBarcode(e.target.value);
+                    setMaterialBarcodeError(''); // Clear error on change
+                  }}
                   sx={{ mb: 2 }}
                   error={!!materialBarcodeError}
                   helperText={materialBarcodeError}
@@ -198,7 +202,10 @@ function MaterialOperations() {
                   fullWidth
                   label="Target Slot ID"
                   value={slotId}
-                  onChange={(e) => setSlotId(e.target.value)}
+                  onChange={(e) => {
+                    setSlotId(e.target.value);
+                    setSlotIdError(''); // Clear error on change
+                  }}
                   error={!!slotIdError}
                   helperText={slotIdError}
                 />
@@ -211,7 +218,10 @@ function MaterialOperations() {
                   fullWidth
                   label="Slot ID to Remove From"
                   value={slotId}
-                  onChange={(e) => setSlotId(e.target.value)}
+                  onChange={(e) => {
+                    setSlotId(e.target.value);
+                    setSlotIdError(''); // Clear error on change
+                  }}
                   sx={{ mb: 2 }}
                   error={!!slotIdError}
                   helperText={slotIdError}
@@ -220,7 +230,10 @@ function MaterialOperations() {
                   fullWidth
                   label="Reason for Removal"
                   value={reason}
-                  onChange={(e) => setReason(e.target.value)}
+                  onChange={(e) => {
+                    setReason(e.target.value);
+                    setReasonError(''); // Clear error on change
+                  }}
                   error={!!reasonError}
                   helperText={reasonError}
                 />
@@ -233,7 +246,10 @@ function MaterialOperations() {
                   fullWidth
                   label="From Slot ID"
                   value={fromSlotId}
-                  onChange={(e) => setFromSlotId(e.target.value)}
+                  onChange={(e) => {
+                    setFromSlotId(e.target.value);
+                    setFromSlotIdError(''); // Clear error on change
+                  }}
                   sx={{ mb: 2 }}
                   error={!!fromSlotIdError}
                   helperText={fromSlotIdError}
@@ -242,7 +258,10 @@ function MaterialOperations() {
                   fullWidth
                   label="To Slot ID"
                   value={toSlotId}
-                  onChange={(e) => setToSlotId(e.target.value)}
+                  onChange={(e) => {
+                    setToSlotId(e.target.value);
+                    setToSlotIdError(''); // Clear error on change
+                  }}
                   sx={{ mb: 2 }}
                   error={!!toSlotIdError}
                   helperText={toSlotIdError}
@@ -251,7 +270,10 @@ function MaterialOperations() {
                   fullWidth
                   label="Reason for Move"
                   value={reason}
-                  onChange={(e) => setReason(e.target.value)}
+                  onChange={(e) => {
+                    setReason(e.target.value);
+                    setReasonError(''); // Clear error on change
+                  }}
                   error={!!reasonError}
                   helperText={reasonError}
                 />
