@@ -15,7 +15,7 @@ class RealtimeService {
     
     try {
       // broadcast to specific shelf room
-      this.roomService.broadcastToRoom(`shelf_${shelf_id}`, 'inventory_update', {
+      this.roomService.broadcastToRoom(`shelf_${shelf_id}`, 'system_event', {
         type: event_type,
         data: {
           shelfId: shelf_id,
@@ -26,7 +26,7 @@ class RealtimeService {
       });
 
       // broadcast to admin dashboard
-      this.roomService.broadcastToRoom('admin_dashboard', 'global_update', {
+      this.roomService.broadcastToRoom('admin_dashboard', 'system_event', {
         type: 'inventory_change',
         data: event
       });
@@ -36,7 +36,7 @@ class RealtimeService {
 
       // update shelf status cache
       const updatedShelfStatus = await this.inventoryAPIService.getShelfStatus(shelf_id);
-      await redis.set(`shelf_status:${shelf_id}`, JSON.stringify(updatedShelfStatus), 'EX', 600); // expires in 600 seconds (10 minutes)
+      await redis.set(`shelf_status:${shelf_id}`, JSON.stringify(updatedShelfStatus), 'EX', config.redis.shelfStatusCacheExpiration);
       
       logger.info(`Broadcasted inventory update and updated shelf status cache`, { 
         shelfId: shelf_id, 
@@ -72,7 +72,7 @@ class RealtimeService {
 
       // send current shelf status to the client
       const shelfStatus = await this.getShelfStatus(shelfId);
-      socket.emit('shelf_status', shelfStatus);
+      socket.emit('system_event', { type: 'shelf_status', data: shelfStatus });
       
       logger.info(`Client joined shelf room`, { 
         socketId: socket.id, 
@@ -194,15 +194,21 @@ class RealtimeService {
     
     try {
       // broadcast to specific shelf room
-      this.roomService.broadcastToRoom(`shelf_${shelf_id}`, 'shelf_status_changed', {
-        shelfId: shelf_id,
-        oldStatus: old_status,
-        newStatus: new_status,
-        timestamp
+      this.roomService.broadcastToRoom(`shelf_${shelf_id}`, 'system_event', {
+        type: 'shelf_status_changed',
+        data: {
+          shelfId: shelf_id,
+          oldStatus: old_status,
+          newStatus: new_status,
+          timestamp
+        }
       });
 
       // broadcast to admin dashboard
-      this.roomService.broadcastToRoom('admin_dashboard', 'shelf_status_update', data);
+      this.roomService.broadcastToRoom('admin_dashboard', 'system_event', {
+        type: 'shelf_status_update',
+        data: data
+      });
       
       logger.info(`Broadcasted shelf status change`, { shelf_id, old_status, new_status });
     } catch (error) {
@@ -215,17 +221,22 @@ class RealtimeService {
       const { shelf_id, health_score, message, severity } = alertData;
       
       // broadcast to specific shelf room
-      this.roomService.broadcastToRoom(`shelf_${shelf_id}`, 'health_alert', {
-        type: 'shelf_health',
-        shelfId: shelf_id,
-        healthScore: health_score,
-        message,
-        severity,
-        timestamp: alertData.timestamp
+      this.roomService.broadcastToRoom(`shelf_${shelf_id}`, 'system_event', {
+        type: 'health_alert',
+        data: {
+          shelfId: shelf_id,
+          healthScore: health_score,
+          message,
+          severity,
+          timestamp: alertData.timestamp
+        }
       });
 
       // broadcast to admin dashboard
-      this.roomService.broadcastToRoom('admin_dashboard', 'health_alert', alertData);
+      this.roomService.broadcastToRoom('admin_dashboard', 'system_event', {
+        type: 'health_alert',
+        data: alertData
+      });
       
       logger.info(`Broadcasted health alert`, { shelf_id, severity });
     } catch (error) {
@@ -236,13 +247,19 @@ class RealtimeService {
   async broadcastSystemAlert(alertData) {
     try {
       // broadcast to admin dashboard
-      this.roomService.broadcastToRoom('admin_dashboard', 'system_alert', alertData);
+      this.roomService.broadcastToRoom('admin_dashboard', 'system_event', {
+        type: 'system_alert',
+        data: alertData
+      });
       
       // broadcast critical alerts to all connected clients if severity is critical
       if (alertData.severity === 'critical') {
-        this.io.emit('critical_system_alert', {
-          message: alertData.message,
-          timestamp: alertData.timestamp
+        this.io.emit('system_event', {
+          type: 'critical_system_alert',
+          data: {
+            message: alertData.message,
+            timestamp: alertData.timestamp
+          }
         });
       }
       
@@ -255,7 +272,10 @@ class RealtimeService {
   async broadcastAuditLog(logData) {
     try {
       // broadcast to admin dashboard
-      this.roomService.broadcastToRoom('admin_dashboard', 'audit_log', logData);
+      this.roomService.broadcastToRoom('admin_dashboard', 'system_event', {
+        type: 'audit_log',
+        data: logData
+      });
     } catch (error) {
       logger.error('Failed to broadcast audit log:', error);
     }
@@ -264,7 +284,10 @@ class RealtimeService {
   // broadcast a message to a specific shelf
   async broadcastToShelf(shelfId, message) {
     try {
-      this.roomService.broadcastToRoom(`shelf_${shelfId}`, 'shelf_message', message);
+      this.roomService.broadcastToRoom(`shelf_${shelfId}`, 'system_event', {
+        type: 'shelf_message',
+        data: message
+      });
     } catch (error) {
       logger.error('Failed to broadcast to shelf:', error);
     }

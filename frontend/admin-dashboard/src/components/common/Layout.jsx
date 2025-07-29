@@ -31,16 +31,19 @@ function Layout({ children }) {
       <AppBar position="static">
         <Toolbar>
           <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
-            WMS Worker App
+            WMS Admin Dashboard
           </Typography>
           <Button color="inherit" component={Link} to="/">
             Dashboard
           </Button>
-          <Button color="inherit" component={Link} to="/operations">
-            Operations
+          <Button color="inherit" component={Link} to="/shelf-management">
+            Shelf Management
           </Button>
-          <Button color="inherit" component={Link} to="/profile">
-            Profile
+          <Button color="inherit" component={Link} to="/reports">
+            Reports
+          </Button>
+          <Button color="inherit" component={Link} to="/system-health">
+            System Health
           </Button>
         </Toolbar>
       </AppBar>

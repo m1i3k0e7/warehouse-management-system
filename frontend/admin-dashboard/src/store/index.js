@@ -1,15 +1,15 @@
 import { configureStore } from '@reduxjs/toolkit';
+import dashboardReducer from './slices/dashboardSlice';
 import shelfReducer from './slices/shelfSlice';
 import operationReducer from './slices/operationSlice';
-import userReducer from './slices/userSlice';
 import notificationReducer from './slices/notificationSlice';
 import websocketMiddleware from './middleware/websocketMiddleware';
 
 const store = configureStore({
   reducer: {
+    dashboard: dashboardReducer,
     shelf: shelfReducer,
     operation: operationReducer,
-    user: userReducer,
     notification: notificationReducer,
   },
   middleware: (getDefaultMiddleware) =>

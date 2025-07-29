@@ -127,6 +127,26 @@ function MaterialOperations() {
     }
 
     try {
+      /*  sendOperationRequest(payload) 
+          -> dispatch({ type: 'websocket/operationRequest', payload: { ...operationData, requestId } });
+          -> socket.emit('operation_request', payload);
+          -> realtimeService.handleOperationRequest(socket, payload);
+          -> realtimeService.processOperation(payload);
+          -> inventoryAPIService.placeMaterial(payload) / removeMaterial(payload) / moveMaterial(payload)
+          -> axios.post(`${this.inventoryServiceUrl}/materials/place`, data);
+          -> inventoryService.MaterialHandler.placeMaterial(data) -> inventoryService.MaterialHandler.placeMaterialHandler.Handle(context, command);
+          -> invertoryService.placeMaterial()
+          -> inventoryService.executePlaceMaterial() -> begin transaction -> insert material into slot -> commit transaction
+          -> inventoryService.auditService.LogSuccessfulOperation() -> auditService.publishAuditLog()
+          -> inventoryService.eventService.publishEvent() -> send Kafka message
+          -> realtimeService.kafkaController.handleMessage()
+          -> realtimeService.inventoryEventHandler.handle() -> realtimeService.broadcastInventoryUpdate()
+          -> roomService.broadcastToRoom() -> socket.to(roomId).emit('system_event', payload);
+          -> roomService.updateRealtimeStats() -> update Redis cache
+          -> frontend.websocketMiddleware.socket.on('system_event')
+          -> dispatch(fetchShelfStatusSuccess(data)) -> update shelf status in Redux store
+          -> dispatch(addOperationToHistory({ ...payload, timestamp: new Date().toISOString(), status: 'success' }));
+      */
       const response = await sendOperationRequest(payload);
       dispatch(executeOperationSuccess(response)); // Use response from backend if available
       dispatch(addOperationToHistory({ ...payload, timestamp: new Date().toISOString(), status: 'success' }));
