@@ -65,3 +65,11 @@ func (r *operationRepository) List(ctx context.Context, limit, offset int) ([]*e
 		Find(&operations).Error
 	return operations, err
 }
+
+func (r *operationRepository) GetTimedOutPendingPhysicalConfirmations(ctx context.Context, timeout time.Duration) ([]*entities.Operation, error) {
+	var operations []*entities.Operation
+	err := r.db.WithContext(ctx).
+		Where("status = ? AND timestamp < ?", entities.OperationStatusPendingPhysicalConfirmation, time.Now().Add(-timeout)).
+		Find(&operations).Error
+	return operations, err
+}

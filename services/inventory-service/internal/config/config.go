@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"strconv"
 	"time"
 )
 
@@ -12,6 +13,7 @@ type Config struct {
 	Redis       RedisConfig
 	Kafka       KafkaConfig
 	LogLevel    string
+	Service     ServiceConfig
 }
 
 type ServerConfig struct {
@@ -40,6 +42,14 @@ type RedisConfig struct {
 type KafkaConfig struct {
 	Brokers []string
 	Topic   string
+}
+
+type ServiceConfig struct {
+	RetryCount                         int
+	RetryDelay                         time.Duration
+	AllowOrigins                       string
+	PhysicalConfirmationTimeout        time.Duration
+	PhysicalConfirmationTimeoutCheckInterval time.Duration
 }
 
 func Load() *Config {
@@ -71,9 +81,11 @@ func Load() *Config {
 		},
 		LogLevel: getEnv("LOG_LEVEL", "info"),
 		Service: ServiceConfig{
-			RetryCount: getEnv("RETRY_COUNT", "5"),
-			RetryDelay:  getEnv("RETRY_DELAY", "2s"),
-			AllowOrigins: getEnv("ALLOW_ORIGINS", ""),
+			RetryCount:                         parseInt(getEnv("RETRY_COUNT", "5")),
+			RetryDelay:                         parseDuration(getEnv("RETRY_DELAY", "2s")),
+			AllowOrigins:                       getEnv("ALLOW_ORIGINS", "*"),
+			PhysicalConfirmationTimeout:        parseDuration(getEnv("PHYSICAL_CONFIRMATION_TIMEOUT", "5m")),
+			PhysicalConfirmationTimeoutCheckInterval: parseDuration(getEnv("PHYSICAL_CONFIRMATION_TIMEOUT_CHECK_INTERVAL", "1m")),
 		},
 	}
 }
@@ -83,4 +95,20 @@ func getEnv(key, defaultValue string) string {
 		return value
 	}
 	return defaultValue
+}
+
+func parseInt(s string) int {
+	val, err := strconv.Atoi(s)
+	if err != nil {
+		return 0 // Default or handle error
+	}
+	return val
+}
+
+func parseDuration(s string) time.Duration {
+	val, err := time.ParseDuration(s)
+	if err != nil {
+		return 0 // Default or handle error
+	}
+	return val
 }

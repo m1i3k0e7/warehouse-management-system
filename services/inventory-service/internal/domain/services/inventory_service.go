@@ -9,7 +9,7 @@ import (
 	"warehouse/internal/domain/entities"
 	"warehouse/internal/domain/repositories"
 	"warehouse/pkg/errors"
-	"warehouse/pkg/utils"
+	"warehouse/pkg/logger"
 )
 
 // InventoryService provides a high-level interface to the inventory system.
@@ -385,7 +385,7 @@ func (s *InventoryService) executePlaceMaterial(ctx context.Context, cmd PlaceMa
 		OperatorID: cmd.OperatorID,
 		ShelfID:    slot.ShelfID,
 		Timestamp:  time.Now(),
-		Status:     entities.OperationStatusCompleted,
+		Status:     entities.OperationStatusPendingPhysicalConfirmation,
 	}
 	if err := s.operationRepo.CreateWithTx(ctx, tx, operation); err != nil {
 		return nil, errors.NewInternalError("failed to record operation", err)
@@ -395,7 +395,8 @@ func (s *InventoryService) executePlaceMaterial(ctx context.Context, cmd PlaceMa
 		return nil, errors.NewInternalError("failed to commit transaction", err)
 	}
 
-	s.publishMaterialPlacedEvent(ctx, operation)
+	// Publish event to request physical placement
+	s.publishPhysicalPlacementRequestedEvent(ctx, operation)
 	return operation, nil
 }
 
@@ -543,9 +544,9 @@ func (s *InventoryService) executeReserveSlots(ctx context.Context, cmd ReserveS
 		slot.Status = entities.SlotStatusReserved
 		slot.UpdatedAt = time.Now()
 		slot.Version++
-		if err := s.slotRepo.UpdateWithTx(ctx, tx, slot); err != nil {
-			return errors.NewConflictError(fmt.Sprintf("failed to reserve slot %s", slotID), err)
-		}
+	if err := s.slotRepo.UpdateWithTx(ctx, tx, slot); err != nil {
+		return errors.NewConflictError(fmt.Sprintf("failed to reserve slot %s", slotID), err)
+	}
 	}
 	if err := tx.Commit(); err != nil {
 		return errors.NewInternalError("failed to commit transaction", err)
@@ -670,5 +671,287 @@ func (s *InventoryService) searchMaterials(ctx context.Context, query string, li
 }
 
 func generateUUID() string {
-    return uuid.generateUUID()
+	return uuid.New().String()
+}
+
+// ConfirmPhysicalPlacement confirms that a physical placement operation has been completed.
+func (s *InventoryService) ConfirmPhysicalPlacement(ctx context.Context, operationID string) error {
+	operation, err := s.operationRepo.GetByID(ctx, operationID)
+	if err != nil {
+		return errors.NewNotFoundError("operation not found", err)
+	}
+
+	if operation.Status != entities.OperationStatusPendingPhysicalConfirmation {
+		return errors.NewConflictError(fmt.Sprintf("operation %s is not in pending physical confirmation status", operationID), nil)
+	}
+
+	tx, err := s.operationRepo.BeginTx(ctx)
+	if err != nil {
+		return errors.NewInternalError("failed to start transaction", err)
+	}
+	defer func() {
+		if err != nil {
+			tx.Rollback()
+		}
+	}()
+
+	operation.Status = entities.OperationStatusCompleted
+	operation.Timestamp = time.Now()
+	if err := s.operationRepo.UpdateWithTx(ctx, tx, operation); err != nil {
+		return errors.NewInternalError("failed to update operation status", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return errors.NewInternalError("failed to commit transaction", err)
+	}
+
+	// Publish material placed event (now that physical placement is confirmed)
+	s.publishMaterialPlacedEvent(ctx, operation)
+	// s.publishPhysicalPlacementConfirmedEvent(ctx, operation) // This event is now handled by material.placed
+
+	return nil
+}
+
+// HandlePhysicalPlacementTimeout handles a physical placement operation that has timed out.
+func (s *InventoryService) HandlePhysicalPlacementTimeout(ctx context.Context, operationID string) error {
+	operation, err := s.operationRepo.GetByID(ctx, operationID)
+	if err != nil {
+		return errors.NewNotFoundError("operation not found", err)
+	}
+
+	if operation.Status != entities.OperationStatusPendingPhysicalConfirmation {
+		return errors.NewConflictError(fmt.Sprintf("operation %s is not in pending physical confirmation status", operationID), nil)
+	}
+
+	tx, err := s.operationRepo.BeginTx(ctx)
+	if err != nil {
+		return errors.NewInternalError("failed to start transaction", err)
+	}
+	defer func() {
+		if err != nil {
+			tx.Rollback()
+		}
+	}()
+
+	// Rollback slot status
+	slot, err := s.slotRepo.GetByID(ctx, operation.SlotID)
+	if err != nil {
+		return errors.NewNotFoundError("slot not found for rollback", err)
+	}
+	slot.Status = entities.SlotStatusEmpty
+	slot.MaterialID = nil
+	slot.UpdatedAt = time.Now()
+	slot.Version++
+	if err := s.slotRepo.UpdateWithTx(ctx, tx, slot); err != nil {
+		return errors.NewInternalError("failed to rollback slot status", err)
+	}
+
+	// Rollback material status (if applicable, e.g., if it was marked as in_use)
+	material, err := s.materialRepo.GetByID(ctx, operation.MaterialID)
+	if err != nil {
+		return errors.NewNotFoundError("material not found for rollback", err)
+	}
+	material.Status = entities.MaterialStatusAvailable
+	material.UpdatedAt = time.Now()
+	if err := s.materialRepo.UpdateWithTx(ctx, tx, material); err != nil {
+		return errors.NewInternalError("failed to rollback material status", err)
+	}
+
+	// Update operation status to failed
+	operation.Status = entities.OperationStatusFailed
+	operation.Timestamp = time.Now()
+	if err := s.operationRepo.UpdateWithTx(ctx, tx, operation); err != nil {
+		return errors.NewInternalError("failed to update operation status to failed", err)
+	}
+
+	// Publish physical placement failed event
+	s.publishPhysicalPlacementFailedEvent(ctx, operation)
+
+	if err := tx.Commit(); err != nil {
+		return errors.NewInternalError("failed to commit transaction", err)
+	}
+
+	return nil
+}
+
+// HandleMaterialDetectedEvent handles a material detected event from a physical sensor.
+// It checks if this detection confirms a pending placement operation or is an unplanned placement.
+func (s *InventoryService) HandleMaterialDetectedEvent(ctx context.Context, slotID, materialBarcode string) error {
+	// First, try to find a pending physical confirmation operation for this slot
+	operations, err := s.operationRepo.GetPendingPhysicalConfirmationsBySlotID(ctx, slotID)
+	if err != nil {
+		logger.Error(fmt.Sprintf("Failed to query pending operations for slot %s: %v", slotID, err))
+		return err
+	}
+
+	for _, op := range operations {
+		// Check if the detected material matches the expected material for this operation
+		if op.MaterialID == materialBarcode { // Assuming materialBarcode from sensor matches MaterialID in operation
+			logger.Info(fmt.Sprintf("Confirming physical placement for operation %s in slot %s", op.ID, slotID))
+			return s.ConfirmPhysicalPlacement(ctx, op.ID)
+		}
+	}
+
+	// If no matching pending operation is found, it's an unplanned placement
+	logger.Warn(fmt.Sprintf("Unplanned material detected in slot %s with barcode %s. Triggering alert.", slotID, materialBarcode))
+	s.publishUnplannedPlacementEvent(ctx, slotID, materialBarcode)
+
+	return nil
+}
+
+func (s *InventoryService) publishPhysicalPlacementRequestedEvent(ctx context.Context, operation *entities.Operation) {
+	event := struct {
+		OperationID string    `json:"operation_id"`
+		MaterialID  string    `json:"material_id"`
+		SlotID      string    `json:"slot_id"`
+		ShelfID     string    `json:"shelf_id"`
+		OperatorID  string    `json:"operator_id"`
+		Timestamp   time.Time `json:"timestamp"`
+	}{
+		OperationID: operation.ID,
+		MaterialID:  operation.MaterialID,
+		SlotID:      operation.SlotID,
+		ShelfID:     operation.ShelfID,
+		OperatorID:  operation.OperatorID,
+		Timestamp:   time.Now(),
+	}
+
+	if err := s.eventService.PublishEvent(ctx, EventTypePhysicalPlacementRequested, event); err != nil {
+		logger.Error("Failed to publish physical placement requested event", err)
+		s.scheduleEventRetry(ctx, EventTypePhysicalPlacementRequested, EventTypePhysicalPlacementRequested, event, err)
+	}
+}
+
+func (s *InventoryService) publishPhysicalPlacementConfirmedEvent(ctx context.Context, operation *entities.Operation) {
+	event := struct {
+		OperationID string    `json:"operation_id"`
+		MaterialID  string    `json:"material_id"`
+		SlotID      string    `json:"slot_id"`
+		ShelfID     string    `json:"shelf_id"`
+		OperatorID  string    `json:"operator_id"`
+		Timestamp   time.Time `json:"timestamp"`
+	}{
+		OperationID: operation.ID,
+		MaterialID:  operation.MaterialID,
+		SlotID:      operation.SlotID,
+		ShelfID:     operation.ShelfID,
+		OperatorID:  operation.OperatorID,
+		Timestamp:   time.Now(),
+	}
+
+	if err := s.eventService.PublishEvent(ctx, EventTypePhysicalPlacementConfirmed, event); err != nil {
+		logger.Error("Failed to publish physical placement confirmed event", err)
+		s.scheduleEventRetry(ctx, EventTypePhysicalPlacementConfirmed, EventTypePhysicalPlacementConfirmed, event, err)
+	}
+}
+
+func (s *InventoryService) publishPhysicalPlacementFailedEvent(ctx context.Context, operation *entities.Operation) {
+	event := struct {
+		OperationID string    `json:"operation_id"`
+		MaterialID  string    `json:"material_id"`
+		SlotID      string    `json:"slot_id"`
+		ShelfID     string    `json:"shelf_id"`
+		OperatorID  string    `json:"operator_id"`
+		Timestamp   time.Time `json:"timestamp"`
+	}{
+		OperationID: operation.ID,
+		MaterialID:  operation.MaterialID,
+		SlotID:      operation.SlotID,
+		ShelfID:     operation.ShelfID,
+		OperatorID:  operation.OperatorID,
+		Timestamp:   time.Now(),
+	}
+
+	if err := s.eventService.PublishEvent(ctx, EventTypePhysicalPlacementFailed, event); err != nil {
+		logger.Error("Failed to publish physical placement failed event", err)
+		s.scheduleEventRetry(ctx, EventTypePhysicalPlacementFailed, EventTypePhysicalPlacementFailed, event, err)
+	}
+}
+
+func (s *InventoryService) publishUnplannedPlacementEvent(ctx context.Context, slotID, materialBarcode string) {
+	event := struct {
+		SlotID        string    `json:"slot_id"`
+		MaterialBarcode string    `json:"material_barcode"`
+		Timestamp     time.Time `json:"timestamp"`
+	}{
+		SlotID:        slotID,
+		MaterialBarcode: materialBarcode,
+		Timestamp:     time.Now(),
+	}
+
+	if err := s.eventService.PublishEvent(ctx, EventTypeUnplannedPlacement, event); err != nil {
+		logger.Error("Failed to publish unplanned placement event", err)
+		s.scheduleEventRetry(ctx, EventTypeUnplannedPlacement, EventTypeUnplannedPlacement, event, err)
+	}
+}
+
+func (s *InventoryService) publishMaterialPlacedEvent(ctx context.Context, operation *entities.Operation) {
+	event := struct {
+		EventID    string    `json:"event_id"`
+		MaterialID string    `json:"material_id"`
+		SlotID     string    `json:"slot_id"`
+		ShelfID    string    `json:"shelf_id"`
+		OperatorID string    `json:"operator_id"`
+		Timestamp  time.Time `json:"timestamp"`
+	}{
+		EventID:    generateUUID(),
+		MaterialID: operation.MaterialID,
+		SlotID:     operation.SlotID,
+		ShelfID:    operation.ShelfID,
+		OperatorID: operation.OperatorID,
+		Timestamp:  time.Now(),
+	}
+
+	if err := s.eventService.PublishEvent(ctx, EventTypeMaterialPlaced, event); err != nil {
+		logger.Error("Failed to publish material placed event", err)
+		s.scheduleEventRetry(ctx, EventTypeMaterialPlaced, EventTypeMaterialPlaced, event, err)
+	}
+}
+
+func (s *InventoryService) publishMaterialRemovedEvent(ctx context.Context, operation *entities.Operation) {
+	event := struct {
+		EventID    string    `json:"event_id"`
+		MaterialID string    `json:"material_id"`
+		SlotID     string    `json:"slot_id"`
+		ShelfID    string    `json:"shelf_id"`
+		OperatorID string    `json:"operator_id"`
+		Timestamp  time.Time `json:"timestamp"`
+	}{
+		EventID:    generateUUID(),
+		MaterialID: operation.MaterialID,
+		SlotID:     operation.SlotID,
+		ShelfID:    operation.ShelfID,
+		OperatorID: operation.OperatorID,
+		Timestamp:  time.Now(),
+	}
+
+	if err := s.eventService.PublishEvent(ctx, EventTypeMaterialRemoved, event); err != nil {
+		logger.Error("Failed to publish material removed event", err)
+		s.scheduleEventRetry(ctx, EventTypeMaterialRemoved, EventTypeMaterialRemoved, event, err)
+	}
+}
+
+func (s *InventoryService) publishMaterialMovedEvent(ctx context.Context, operation *entities.Operation, fromSlotID string) {
+	event := struct {
+		EventID    string    `json:"event_id"`
+		MaterialID string    `json:"material_id"`
+		FromSlotID string    `json:"from_slot_id"`
+		ToSlotID   string    `json:"to_slot_id"`
+		ShelfID    string    `json:"shelf_id"`
+		OperatorID string    `json:"operator_id"`
+		Timestamp  time.Time `json:"timestamp"`
+	}{
+		EventID:    generateUUID(),
+		MaterialID: operation.MaterialID,
+		FromSlotID: fromSlotID,
+		ToSlotID:   operation.SlotID,
+		ShelfID:    operation.ShelfID,
+		OperatorID: operation.OperatorID,
+		Timestamp:  time.Now(),
+	}
+
+	if err := s.eventService.PublishEvent(ctx, EventTypeMaterialMoved, event); err != nil {
+		logger.Error("Failed to publish material moved event", err)
+		s.scheduleEventRetry(ctx, EventTypeMaterialMoved, EventTypeMaterialMoved, event, err)
+	}
 }

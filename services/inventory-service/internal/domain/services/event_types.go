@@ -6,6 +6,10 @@ const (
 	EventTypeMaterialRemoved = "material.removed"
 	EventTypeMaterialMoved = "material.moved"
 
+	// Physical Placement Events
+	EventTypeMaterialDetected = "material.detected" // Raw event from physical sensor
+	EventTypeUnplannedPlacement = "unplanned.placement" // Event for detected but unplanned placement
+
 	// Shelf Events
 	EventTypeShelfStatusChanged = "shelf.status_changed"
 	EventTypeShelfHealthAlert = "shelf.health_alert"

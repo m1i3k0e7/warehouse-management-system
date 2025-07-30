@@ -75,6 +75,18 @@ const websocketMiddleware = (store) => (next) => (action) => {
       case 'critical_system_alert':
         notificationMessage = `CRITICAL SYSTEM ALERT: ${data.message}`;
         break;
+      case 'physical.placement.confirmed': // New event type
+        notificationMessage = `Physical placement confirmed for operation ${data.operation_id}.`;
+        // Update slot status and operation history based on confirmed data
+        store.dispatch(updateSlotStatus({ slotId: data.slot_id, newStatus: 'occupied', materialId: data.material_id }));
+        store.dispatch(addOperationToHistory({ ...data, type: 'placement_confirmed', status: 'completed' }));
+        break;
+      case 'physical.placement.failed': // New event type
+        notificationMessage = `Physical placement failed for operation ${data.operation_id}. Slot rolled back.`;
+        // Update slot status and operation history based on failed data
+        store.dispatch(updateSlotStatus({ slotId: data.slot_id, newStatus: 'empty', materialId: null }));
+        store.dispatch(addOperationToHistory({ ...data, type: 'placement_failed', status: 'failed' }));
+        break;
       default:
         logger.warn(`Unknown system event type received: ${type}`, payload);
         notificationMessage = `Received unknown event: ${type}`;

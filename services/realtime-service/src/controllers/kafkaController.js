@@ -1,6 +1,6 @@
 const { Kafka } = require('kafkajs');
 const logger = require('../utils/logger');
-const { INVENTORY_EVENTS, SHELF_EVENTS, SYSTEM_EVENTS } = require('../events/types');
+const { INVENTORY_EVENTS, SHELF_EVENTS, SYSTEM_EVENTS, PHYSICAL_PLACEMENT_EVENTS } = require('../events/types');
 const InventoryEventHandler = require('../events/handlers/inventoryHandler');
 const SystemEventHandler = require('../events/handlers/systemHandler');
 const {config} = require('../config');
@@ -34,7 +34,8 @@ class KafkaController {
       
       // subscribe to multiple topics
       await this.consumer.subscribe({ 
-        topics: Object.values(INVENTORY_EVENTS).concat(Object.values(SHELF_EVENTS), Object.values(SYSTEM_EVENTS)),
+        topics: Object.values(INVENTORY_EVENTS)
+          .concat(Object.values(SHELF_EVENTS), Object.values(SYSTEM_EVENTS), Object.values(PHYSICAL_PLACEMENT_EVENTS)),
         fromBeginning: false 
       });
 
@@ -74,6 +75,44 @@ class KafkaController {
       case SYSTEM_EVENTS.SYSTEM_ALERT:
       case SYSTEM_EVENTS.AUDIT_LOG:
         await this.systemEventHandler.handle(eventType, eventData);
+        break;
+      case PHYSICAL_PLACEMENT_EVENTS.PHYSICAL_PLACEMENT_REQUESTED:
+        // For requested events, we might want to broadcast to worker app for guidance
+        this.realtimeService.broadcastToShelf(eventData.shelf_id, { 
+          type: PHYSICAL_PLACEMENT_EVENTS.PHYSICAL_PLACEMENT_REQUESTED,
+          operation_id: eventData.operation_id,
+          slot_id: eventData.slot_id,
+          material_id: eventData.material_id,
+          message: `Please place material ${eventData.material_id} into slot ${eventData.slot_id} on shelf ${eventData.shelf_id}.`
+        });
+        break;
+      case PHYSICAL_PLACEMENT_EVENTS.PHYSICAL_PLACEMENT_CONFIRMED:
+        // Broadcast to relevant clients (e.g., worker app, admin dashboard)
+        this.realtimeService.broadcastToShelf(eventData.shelf_id, { 
+          type: PHYSICAL_PLACEMENT_EVENTS.PHYSICAL_PLACEMENT_CONFIRMED,
+          operation_id: eventData.operation_id,
+          slot_id: eventData.slot_id,
+          material_id: eventData.material_id,
+          message: `Physical placement confirmed for operation ${eventData.operation_id}.`
+        });
+        // Also update shelf status if needed
+        this.realtimeService.getShelfStatus(eventData.shelf_id).then(shelfStatus => {
+          this.realtimeService.io.to(`shelf_${eventData.shelf_id}`).emit('system_event', { type: 'shelf_status', data: shelfStatus });
+        });
+        break;
+      case PHYSICAL_PLACEMENT_EVENTS.PHYSICAL_PLACEMENT_FAILED:
+        // Broadcast to relevant clients (e.g., worker app, admin dashboard)
+        this.realtimeService.broadcastToShelf(eventData.shelf_id, { 
+          type: PHYSICAL_PLACEMENT_EVENTS.PHYSICAL_PLACEMENT_FAILED,
+          operation_id: eventData.operation_id,
+          slot_id: eventData.slot_id,
+          material_id: eventData.material_id,
+          message: `Physical placement failed for operation ${eventData.operation_id}. Slot rolled back.`
+        });
+        // Also update shelf status if needed
+        this.realtimeService.getShelfStatus(eventData.shelf_id).then(shelfStatus => {
+          this.realtimeService.io.to(`shelf_${eventData.shelf_id}`).emit('system_event', { type: 'shelf_status', data: shelfStatus });
+        });
         break;
       default:
         logger.warn(`Unknown event type received: ${eventType} on topic ${topic}`);

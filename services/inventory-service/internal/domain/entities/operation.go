@@ -16,10 +16,11 @@ const (
 type OperationStatus string
 
 const (
-	OperationStatusPending   OperationStatus = "pending"
-	OperationStatusCompleted OperationStatus = "completed"
-	OperationStatusFailed    OperationStatus = "failed"
-	OperationStatusCancelled OperationStatus = "cancelled"
+	OperationStatusPending                   OperationStatus = "pending"
+	OperationStatusCompleted                 OperationStatus = "completed"
+	OperationStatusFailed                    OperationStatus = "failed"
+	OperationStatusCancelled                 OperationStatus = "cancelled"
+	OperationStatusPendingPhysicalConfirmation OperationStatus = "pending_physical_confirmation"
 )
 
 type Operation struct {
