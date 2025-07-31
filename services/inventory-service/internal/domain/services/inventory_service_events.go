@@ -4,80 +4,9 @@ import (
 	"context"
 	"time"
 
-	"warehouse/internal/domain/entities"
-	"warehouse/pkg/logger"
+	"WMS/services/inventory-service/internal/domain/entities"
+	"WMS/services/inventory-service/pkg/utils/logger"
 )
-
-func (s *InventoryService) publishMaterialPlacedEvent(ctx context.Context, operation *entities.Operation) {
-	event := struct {
-		EventID    string    `json:"event_id"`
-		MaterialID string    `json:"material_id"`
-		SlotID     string    `json:"slot_id"`
-		ShelfID    string    `json:"shelf_id"`
-		OperatorID string    `json:"operator_id"`
-		Timestamp  time.Time `json:"timestamp"`
-	}{
-		EventID:    generateUUID(),
-		MaterialID: operation.MaterialID,
-		SlotID:     operation.SlotID,
-		ShelfID:    operation.ShelfID,
-		OperatorID: operation.OperatorID,
-		Timestamp:  time.Now(),
-	}
-
-	if err := s.eventService.PublishEvent(ctx, EventTypeMaterialPlaced, event); err != nil {
-		logger.Error("Failed to publish material placed event", err)
-		s.scheduleEventRetry(ctx, EventTypeMaterialPlaced, EventTypeMaterialPlaced, event, err)
-	}
-}
-
-func (s *InventoryService) publishMaterialRemovedEvent(ctx context.Context, operation *entities.Operation) {
-	event := struct {
-		EventID    string    `json:"event_id"`
-		MaterialID string    `json:"material_id"`
-		SlotID     string    `json:"slot_id"`
-		ShelfID    string    `json:"shelf_id"`
-		OperatorID string    `json:"operator_id"`
-		Timestamp  time.Time `json:"timestamp"`
-	}{
-		EventID:    generateUUID(),
-		MaterialID: operation.MaterialID,
-		SlotID:     operation.SlotID,
-		ShelfID:    operation.ShelfID,
-		OperatorID: operation.OperatorID,
-		Timestamp:  time.Now(),
-	}
-
-	if err := s.eventService.PublishEvent(ctx, EventTypeMaterialRemoved, event); err != nil {
-		logger.Error("Failed to publish material removed event", err)
-		s.scheduleEventRetry(ctx, EventTypeMaterialRemoved, EventTypeMaterialRemoved, event, err)
-	}
-}
-
-func (s *InventoryService) publishMaterialMovedEvent(ctx context.Context, operation *entities.Operation, fromSlotID string) {
-	event := struct {
-		EventID    string    `json:"event_id"`
-		MaterialID string    `json:"material_id"`
-		FromSlotID string    `json:"from_slot_id"`
-		ToSlotID   string    `json:"to_slot_id"`
-		ShelfID    string    `json:"shelf_id"`
-		OperatorID string    `json:"operator_id"`
-		Timestamp  time.Time `json:"timestamp"`
-	}{
-		EventID:    generateUUID(),
-		MaterialID: operation.MaterialID,
-		FromSlotID: fromSlotID,
-		ToSlotID:   operation.SlotID,
-		ShelfID:    operation.ShelfID,
-		OperatorID: operation.OperatorID,
-		Timestamp:  time.Now(),
-	}
-
-	if err := s.eventService.PublishEvent(ctx, EventTypeMaterialMoved, event); err != nil {
-		logger.Error("Failed to publish material moved event", err)
-		s.scheduleEventRetry(ctx, EventTypeMaterialMoved, EventTypeMaterialMoved, event, err)
-	}
-}
 
 func (s *InventoryService) publishShelfStatusChangedEvent(ctx context.Context, shelfID string, oldStatus, newStatus string) {
 	event := struct {
@@ -100,29 +29,6 @@ func (s *InventoryService) publishShelfStatusChangedEvent(ctx context.Context, s
 	}
 }
 
-func (s *InventoryService) publishSystemAlertEvent(ctx context.Context, alertType, severity, message string, metadata map[string]interface{}) {
-	event := struct {
-		EventID   string                 `json:"event_id"`
-		AlertType string                 `json:"alert_type"`
-		Severity  string                 `json:"severity"`
-		Message   string                 `json:"message"`
-		Metadata  map[string]interface{} `json:"metadata"`
-		Timestamp time.Time              `json:"timestamp"`
-	}{
-		EventID:   generateUUID(),
-		AlertType: alertType,
-		Severity:  severity,
-		Message:   message,
-		Metadata:  metadata,
-		Timestamp: time.Now(),
-	}
-
-	if err := s.eventService.PublishEvent(ctx, EventTypeSystemAlert, event); err != nil {
-		logger.Error("Failed to publish system alert event", err)
-		s.scheduleEventRetry(ctx, EventTypeSystemAlert, EventTypeSystemAlert, event, err)
-	}
-}
-
 func (s *InventoryService) scheduleEventRetry(ctx context.Context, topic, eventType string, event interface{}, originalErr error) {
 	// save the failed event to the dead-letter queue (DLQ)
 	failedEvent, err := entities.NewFailedEvent(generateUUID(), topic, eventType, event, originalErr)
@@ -133,5 +39,199 @@ func (s *InventoryService) scheduleEventRetry(ctx context.Context, topic, eventT
 
 	if err := s.failedEventRepo.Create(ctx, failedEvent); err != nil {
 		logger.Error("Failed to save failed event to DLQ", err)
+	}
+}
+
+func (s *InventoryService) publishPhysicalPlacementRequestedEvent(ctx context.Context, operation *entities.Operation) {
+	event := struct {
+		OperationID string    `json:"operation_id"`
+		MaterialID  string    `json:"material_id"`
+		SlotID      string    `json:"slot_id"`
+		ShelfID     string    `json:"shelf_id"`
+		OperatorID  string    `json:"operator_id"`
+		Timestamp   time.Time `json:"timestamp"`
+		EventType   string    `json:"event_type"`
+	}{
+		OperationID: operation.ID,
+		MaterialID:  operation.MaterialID,
+		SlotID:      operation.SlotID,
+		ShelfID:     operation.ShelfID,
+		OperatorID:  operation.OperatorID,
+		Timestamp:   time.Now(),
+		EventType:   EventTypePhysicalPlacementRequested,
+	}
+
+	if err := s.eventService.PublishEvent(ctx, EventTypePhysicalPlacementRequested, event); err != nil {
+		logger.Error("Failed to publish physical placement requested event", err)
+		s.scheduleEventRetry(ctx, EventTypePhysicalPlacementRequested, EventTypePhysicalPlacementRequested, event, err)
+	}
+}
+
+func (s *InventoryService) publishPhysicalPlacementConfirmedEvent(ctx context.Context, operation *entities.Operation) {
+	event := struct {
+		OperationID string    `json:"operation_id"`
+		MaterialID  string    `json:"material_id"`
+		SlotID      string    `json:"slot_id"`
+		ShelfID     string    `json:"shelf_id"`
+		OperatorID  string    `json:"operator_id"`
+		Timestamp   time.Time `json:"timestamp"`
+		EventType   string    `json:"event_type"`
+	}{
+		OperationID: operation.ID,
+		MaterialID:  operation.MaterialID,
+		SlotID:      operation.SlotID,
+		ShelfID:     operation.ShelfID,
+		OperatorID:  operation.OperatorID,
+		Timestamp:   time.Now(),
+		EventType:   EventTypePhysicalPlacementConfirmed,
+	}
+
+	if err := s.eventService.PublishEvent(ctx, EventTypePhysicalPlacementConfirmed, event); err != nil {
+		logger.Error("Failed to publish physical placement confirmed event", err)
+		s.scheduleEventRetry(ctx, EventTypePhysicalPlacementConfirmed, EventTypePhysicalPlacementConfirmed, event, err)
+	}
+}
+
+func (s *InventoryService) publishPhysicalPlacementFailedEvent(ctx context.Context, operation *entities.Operation) {
+	event := struct {
+		OperationID string    `json:"operation_id"`
+		MaterialID  string    `json:"material_id"`
+		SlotID      string    `json:"slot_id"`
+		ShelfID     string    `json:"shelf_id"`
+		OperatorID  string    `json:"operator_id"`
+		Timestamp   time.Time `json:"timestamp"`
+		EventType   string    `json:"event_type"`
+	}{
+		OperationID: operation.ID,
+		MaterialID:  operation.MaterialID,
+		SlotID:      operation.SlotID,
+		ShelfID:     operation.ShelfID,
+		OperatorID:  operation.OperatorID,
+		Timestamp:   time.Now(),
+		EventType:   EventTypePhysicalPlacementFailed,
+	}
+
+	if err := s.eventService.PublishEvent(ctx, EventTypePhysicalPlacementFailed, event); err != nil {
+		logger.Error("Failed to publish physical placement failed event", err)
+		s.scheduleEventRetry(ctx, EventTypePhysicalPlacementFailed, EventTypePhysicalPlacementFailed, event, err)
+	}
+}
+
+func (s *InventoryService) publishPhysicalRemovalConfirmedEvent(ctx context.Context, operation *entities.Operation) {}
+
+func (s *InventoryService) publishPhysicalRemovalFaileddEvent(ctx context.Context, operation *entities.Operation) {}
+
+func (s *InventoryService) publishUnplannedPlacementEvent(ctx context.Context, slotID, materialBarcode string) {
+	event := struct {
+		SlotID          string    `json:"slot_id"`
+		MaterialBarcode string    `json:"material_barcode"`
+		Timestamp       time.Time `json:"timestamp"`
+		EventType       string    `json:"event_type"`
+	}{
+		SlotID:          slotID,
+		MaterialBarcode: materialBarcode,
+		Timestamp:       time.Now(),
+		EventType:       EventTypeUnplannedPlacement,
+	}
+
+	if err := s.eventService.PublishEvent(ctx, EventTypeUnplannedPlacement, event); err != nil {
+		logger.Error("Failed to publish unplanned placement event", err)
+		s.scheduleEventRetry(ctx, EventTypeUnplannedPlacement, EventTypeUnplannedPlacement, event, err)
+	}
+}
+
+func (s *InventoryService) publishUnplannedRemovalEvent(ctx context.Context, slotID string, materialBarcode string) {
+	event := struct {
+		SlotID          string    `json:"slot_id"`
+		MaterialBarcode string    `json:"material_barcode"`
+		Timestamp       time.Time `json:"timestamp"`
+		EventType       string    `json:"event_type"`
+	}{
+		SlotID:          slotID,
+		MaterialBarcode: materialBarcode,
+		Timestamp:       time.Now(),
+		EventType:       EventTypeUnplannedRemoval,
+	}
+
+	if err := s.eventService.PublishEvent(ctx, EventTypeUnplannedRemoval, event); err != nil {
+		logger.Error("Failed to publish unplanned removal event", err)
+		s.scheduleEventRetry(ctx, EventTypeUnplannedRemoval, EventTypeUnplannedRemoval, event, err)
+	}
+}
+
+func (s *InventoryService) publishMaterialPlacedEvent(ctx context.Context, operation *entities.Operation) {
+	event := struct {
+		EventID    string    `json:"event_id"`
+		MaterialID string    `json:"material_id"`
+		SlotID     string    `json:"slot_id"`
+		ShelfID    string    `json:"shelf_id"`
+		OperatorID string    `json:"operator_id"`
+		Timestamp  time.Time `json:"timestamp"`
+		EventType  string    `json:"event_type"`
+	}{
+		EventID:    generateUUID(),
+		MaterialID: operation.MaterialID,
+		SlotID:     operation.SlotID,
+		ShelfID:    operation.ShelfID,
+		OperatorID: operation.OperatorID,
+		Timestamp:  time.Now(),
+		EventType:  EventTypeMaterialPlaced,
+	}
+
+	if err := s.eventService.PublishEvent(ctx, EventTypeMaterialPlaced, event); err != nil {
+		logger.Error("Failed to publish material placed event", err)
+		s.scheduleEventRetry(ctx, EventTypeMaterialPlaced, EventTypeMaterialPlaced, event, err)
+	}
+}
+
+func (s *InventoryService) publishMaterialRemovedEvent(ctx context.Context, operation *entities.Operation) {
+	event := struct {
+		EventID    string    `json:"event_id"`
+		MaterialID string    `json:"material_id"`
+		SlotID     string    `json:"slot_id"`
+		ShelfID    string    `json:"shelf_id"`
+		OperatorID string    `json:"operator_id"`
+		Timestamp  time.Time `json:"timestamp"`
+		EventType  string    `json:"event_type"`
+	}{
+		EventID:    generateUUID(),
+		MaterialID: operation.MaterialID,
+		SlotID:     operation.SlotID,
+		ShelfID:    operation.ShelfID,
+		OperatorID: operation.OperatorID,
+		Timestamp:  time.Now(),
+		EventType:  EventTypeMaterialRemoved,
+	}
+
+	if err := s.eventService.PublishEvent(ctx, EventTypeMaterialRemoved, event); err != nil {
+		logger.Error("Failed to publish material removed event", err)
+		s.scheduleEventRetry(ctx, EventTypeMaterialRemoved, EventTypeMaterialRemoved, event, err)
+	}
+}
+
+func (s *InventoryService) publishMaterialMovedEvent(ctx context.Context, operation *entities.Operation, fromSlotID string) {
+	event := struct {
+		EventID    string    `json:"event_id"`
+		MaterialID string    `json:"material_id"`
+		FromSlotID string    `json:"from_slot_id"`
+		ToSlotID   string    `json:"to_slot_id"`
+		ShelfID    string    `json:"shelf_id"`
+		OperatorID string    `json:"operator_id"`
+		Timestamp  time.Time `json:"timestamp"`
+		EventType  string    `json:"event_type"`
+	}{
+		EventID:    generateUUID(),
+		MaterialID: operation.MaterialID,
+		FromSlotID: fromSlotID,
+		ToSlotID:   operation.SlotID,
+		ShelfID:    operation.ShelfID,
+		OperatorID: operation.OperatorID,
+		Timestamp:  time.Now(),
+		EventType:  EventTypeMaterialMoved,
+	}
+
+	if err := s.eventService.PublishEvent(ctx, EventTypeMaterialMoved, event); err != nil {
+		logger.Error("Failed to publish material moved event", err)
+		s.scheduleEventRetry(ctx, EventTypeMaterialMoved, EventTypeMaterialMoved, event, err)
 	}
 }

@@ -2,8 +2,8 @@ package repositories
 
 import (
 	"context"
-	"inventory-service/internal/domain/entities"
-	"inventory-service/internal/domain/repositories"
+	"WMS/services/inventory-service/internal/domain/entities"
+	"WMS/services/inventory-service/internal/domain/repositories"
 	
 	"gorm.io/gorm"
 )
@@ -54,6 +54,15 @@ func (r *slotRepository) UpdateWithTx(ctx context.Context, tx *gorm.DB, slot *en
 
 func (r *slotRepository) BeginTx(ctx context.Context) (*gorm.DB, error) {
 	return r.db.WithContext(ctx).Begin(), nil
+}
+
+func (r *slotRepository) GetEmptySlotsByShelf(ctx context.Context, shelfID string) ([]*entities.Slot, error) {
+	var slots []*entities.Slot
+	err := r.db.WithContext(ctx).
+		Where("shelf_id = ? AND status = ?", shelfID, entities.SlotStatusEmpty).
+		Order("row, column").
+		Find(&slots).Error
+	return slots, err
 }
 
 func (r *slotRepository) List(ctx context.Context, limit, offset int) ([]*entities.Slot, error) {

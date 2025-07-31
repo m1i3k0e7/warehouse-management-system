@@ -2,7 +2,7 @@ package commands
 
 import (
 	"context"
-	"warehouse/internal/domain/services"
+	"WMS/services/inventory-service/internal/domain/services"
 )
 
 type ReserveSlotsCommand struct {
@@ -21,7 +21,7 @@ func NewReserveSlotsCommandHandler(inventoryService *services.InventoryService) 
 }
 
 func (h *ReserveSlotsCommandHandler) Handle(ctx context.Context, cmd ReserveSlotsCommand) error {
-	return h.inventoryService.ReserveSlots(ctx, services.ReserveSlotsCommand{
+	return h.inventoryService.ReserveSlots(ctx, services.ReserveSlotsParams{
 		SlotIDs:    cmd.SlotIDs,
 		OperatorID: cmd.OperatorID,
 		Duration:   cmd.Duration,

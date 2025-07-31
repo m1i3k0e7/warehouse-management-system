@@ -114,6 +114,20 @@ class KafkaController {
           this.realtimeService.io.to(`shelf_${eventData.shelf_id}`).emit('system_event', { type: 'shelf_status', data: shelfStatus });
         });
         break;
+      case PHYSICAL_PLACEMENT_EVENTS.PHYSICAL_PLACEMENT_UNPLANNED:
+        // Broadcast to relevant clients (e.g., worker app, admin dashboard)
+        this.realtimeService.broadcastToShelf(eventData.shelf_id, { 
+          type: PHYSICAL_PLACEMENT_EVENTS.PHYSICAL_PLACEMENT_UNPLANNED,
+          operation_id: eventData.operation_id,
+          slot_id: eventData.slot_id,
+          material_id: eventData.material_id,
+          message: `Unplanned physical placement detected for operation ${eventData.operation_id}.`
+        });
+        // Also update shelf status if needed
+        this.realtimeService.getShelfStatus(eventData.shelf_id).then(shelfStatus => {
+          this.realtimeService.io.to(`shelf_${eventData.shelf_id}`).emit('system_event', { type: 'shelf_status', data: shelfStatus });
+        });
+        break;
       default:
         logger.warn(`Unknown event type received: ${eventType} on topic ${topic}`);
     }

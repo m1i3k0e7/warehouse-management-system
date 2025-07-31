@@ -6,8 +6,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
-	"warehouse/internal/application/commands"
-	"warehouse/internal/domain/services"
+	"WMS/services/inventory-service/internal/application/commands"
+	"WMS/services/inventory-service/internal/domain/services"
 )
 
 // MockInventoryService is a mock type for the InventoryService

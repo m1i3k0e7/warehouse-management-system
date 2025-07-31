@@ -5,7 +5,7 @@ import (
 	"strconv"
 
 	"github.com/gin-gonic/gin"
-	"warehouse/internal/application/queries"
+	"WMS/services/inventory-service/internal/application/queries"
 )
 
 // OperationHandler handles HTTP requests related to operations.

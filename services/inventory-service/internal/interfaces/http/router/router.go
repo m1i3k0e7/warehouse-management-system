@@ -2,8 +2,8 @@ package router
 
 import (
     "github.com/gin-gonic/gin"
-    "warehouse/internal/interfaces/http/handlers"
-    "warehouse/internal/interfaces/http/middleware"
+    "WMS/services/inventory-service/internal/interfaces/http/handlers"
+    "WMS/services/inventory-service/internal/interfaces/http/middleware"
 )
 
 func SetupRoutes(r *gin.Engine, materialHandler *handlers.MaterialHandler, slotHandler *handlers.SlotHandler, operationHandler *handlers.OperationHandler) {

@@ -7,11 +7,10 @@ package services
 
 import (
     "context"
-    "encoding/json"
     "time"
     
-    "warehouse/internal/domain/entities"
-    "warehouse/pkg/logger"
+    "WMS/services/inventory-service/internal/domain/entities"
+    "WMS/services/inventory-service/pkg/utils/logger"
 )
 
 type AuditService struct {

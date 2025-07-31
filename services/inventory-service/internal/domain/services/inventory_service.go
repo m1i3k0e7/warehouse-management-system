@@ -5,12 +5,40 @@ import (
 	"fmt"
 	"time"
 
+	
+	"WMS/services/inventory-service/internal/domain/entities"
+	"WMS/services/inventory-service/internal/domain/repositories"
+	"WMS/services/inventory-service/pkg/errors"
+	"WMS/services/inventory-service/pkg/utils/logger"
+
 	"github.com/google/uuid"
-	"warehouse/internal/domain/entities"
-	"warehouse/internal/domain/repositories"
-	"warehouse/pkg/errors"
-	"warehouse/pkg/logger"
 )
+
+type PlaceMaterialParams struct {
+	MaterialBarcode string
+	SlotID          string
+	OperatorID      string
+}
+
+type RemoveMaterialParams struct {
+	SlotID     string
+	OperatorID string
+	Reason     string
+}
+
+type MoveMaterialParams struct {
+	FromSlotID string
+	ToSlotID   string
+	OperatorID string
+	Reason     string
+}
+
+type ReserveSlotsParams struct {
+	SlotIDs    []string
+	OperatorID string
+	Duration   int
+	Purpose    string
+}
 
 // InventoryService provides a high-level interface to the inventory system.
 // It is responsible for coordinating the various domain services and repositories
@@ -55,14 +83,14 @@ func NewInventoryService(
 	}
 }
 
-func (s *InventoryService) PlaceMaterial(ctx context.Context, cmd PlaceMaterialCommand) error {
+func (s *InventoryService) PlaceMaterial(ctx context.Context, params PlaceMaterialParams) error {
 	// validate command parameters
-	if err := s.validatePlaceMaterialCommand(cmd); err != nil {
+	if err := s.validatePlaceMaterialParams(params); err != nil {
 		return errors.NewValidationError("invalid command", err)
 	}
 
 	// acquire lock on the shelf
-	slot, err := s.slotRepo.GetByID(ctx, cmd.SlotID)
+	slot, err := s.slotRepo.GetByID(ctx, params.SlotID)
 	if err != nil {
 		return errors.NewNotFoundError("slot not found", err)
 	}
@@ -75,29 +103,29 @@ func (s *InventoryService) PlaceMaterial(ctx context.Context, cmd PlaceMaterialC
 	defer unlock()
 
 	// validate preconditions for placing material
-	if err := s.validatePlacementPreconditions(ctx, cmd); err != nil {
+	if err := s.validatePlacementPreconditions(ctx, params); err != nil {
 		return err
 	}
 
 	// execute the placement operation
-	operation, err := s.executePlaceMaterial(ctx, cmd)
+	operation, err := s.executePlaceMaterial(ctx, params)
 	if err != nil {
 		// log the failed operation
-		s.auditService.LogFailedOperation(ctx, "place_material", cmd, err)
+		s.auditService.LogFailedOperation(ctx, "place_material", params, err)
 		return err
 	}
 
 	// check for anomalies
-	s.checkForAnomalies(ctx, operation, cmd.SensorData)
+	// s.checkForAnomalies(ctx, operation, params.SensorData)
 
 	// log the successful operation
 	s.auditService.LogSuccessfulOperation(ctx, operation)
-	
+
 	return nil
 }
 
-func (s *InventoryService) RemoveMaterial(ctx context.Context, cmd RemoveMaterialCommand) error {
-	slot, err := s.slotRepo.GetByID(ctx, cmd.SlotID)
+func (s *InventoryService) RemoveMaterial(ctx context.Context, param RemoveMaterialParams) error {
+	slot, err := s.slotRepo.GetByID(ctx, param.SlotID)
 	if err != nil {
 		return errors.NewNotFoundError("slot not found", err)
 	}
@@ -113,17 +141,17 @@ func (s *InventoryService) RemoveMaterial(ctx context.Context, cmd RemoveMateria
 	}
 	defer unlock()
 
-	return s.executeRemoveMaterial(ctx, cmd, slot)
+	return s.executeRemoveMaterial(ctx, param, slot)
 }
 
-func (s *InventoryService) MoveMaterial(ctx context.Context, cmd MoveMaterialCommand) error {
+func (s *InventoryService) MoveMaterial(ctx context.Context, params MoveMaterialParams) error {
 	// get the source and target slots
-	fromSlot, err := s.slotRepo.GetByID(ctx, cmd.FromSlotID)
+	fromSlot, err := s.slotRepo.GetByID(ctx, params.FromSlotID)
 	if err != nil {
 		return errors.NewNotFoundError("source slot not found", err)
 	}
 
-	toSlot, err := s.slotRepo.GetByID(ctx, cmd.ToSlotID)
+	toSlot, err := s.slotRepo.GetByID(ctx, params.ToSlotID)
 	if err != nil {
 		return errors.NewNotFoundError("target slot not found", err)
 	}
@@ -140,14 +168,14 @@ func (s *InventoryService) MoveMaterial(ctx context.Context, cmd MoveMaterialCom
 	locks := s.acquireMultipleShelfLocks(ctx, []string{fromSlot.ShelfID, toSlot.ShelfID})
 	defer s.releaseMultipleLocks(locks)
 
-	return s.executeMoveMaterial(ctx, cmd, fromSlot, toSlot)
+	return s.executeMoveMaterial(ctx, params, fromSlot, toSlot)
 }
 
-func (s *InventoryService) ReserveSlots(ctx context.Context, cmd ReserveSlotsCommand) error {
+func (s *InventoryService) ReserveSlots(ctx context.Context, param ReserveSlotsParams) error {
 	// acquire locks on all shelves involved in the reservation
 	shelfIDs := make([]string, 0)
 	slotShelfMap := make(map[string]string)
-	for _, slotID := range cmd.SlotIDs {
+	for _, slotID := range param.SlotIDs {
 		slot, err := s.slotRepo.GetByID(ctx, slotID)
 		if err != nil {
 			return errors.NewNotFoundError(fmt.Sprintf("slot %s not found", slotID), err)
@@ -170,7 +198,7 @@ func (s *InventoryService) ReserveSlots(ctx context.Context, cmd ReserveSlotsCom
 	locks := s.acquireMultipleShelfLocks(ctx, shelfIDs)
 	defer s.releaseMultipleLocks(locks)
 
-	return s.executeReserveSlots(ctx, cmd, slotShelfMap)
+	return s.executeReserveSlots(ctx, param, slotShelfMap)
 }
 
 func (s *InventoryService) FindOptimalSlot(ctx context.Context, materialType string, shelfID string) (*entities.Slot, error) {
@@ -186,10 +214,14 @@ func (s *InventoryService) FindOptimalSlot(ctx context.Context, materialType str
 	return s.selectBestSlot(slots, materialType)
 }
 
-func (s *InventoryService) BatchPlaceMaterials(ctx context.Context, commands []PlaceMaterialCommand) error {
+func (s *InventoryService) BatchPlaceMaterials(ctx context.Context, params []PlaceMaterialParams) error {
 	// group commands by shelf
-	shelfGroups := s.groupCommandsByShelf(commands)
-	for shelfID, shelfCommands := range shelfGroups {
+	shelfGroups, err := s.groupCommandsByShelf(params)
+	if err != nil {
+		return errors.NewInternalError("failed to group commands by shelf", err)
+	}
+	
+	for shelfID, shelfParams := range shelfGroups {
 		lockKey := fmt.Sprintf("shelf:%s", shelfID)
 		unlock, err := s.lockService.AcquireLock(ctx, lockKey, 60*time.Second)
 		if err != nil {
@@ -197,7 +229,7 @@ func (s *InventoryService) BatchPlaceMaterials(ctx context.Context, commands []P
 		}
 		defer unlock()
 
-		err = s.executeBatchPlacement(ctx, shelfCommands)
+		err = s.executeBatchPlacement(ctx, shelfParams)
 		if err != nil {
 			return err
 		}
@@ -265,12 +297,12 @@ func (s *InventoryService) HandleSlotError(ctx context.Context, slotID string, e
 
 	// handle the error based on its type
 	switch errorType {
-		case "sensor_error":
-			return s.markSlotForMaintenance(ctx, slotID, "sensor malfunction")
-		case "weight_mismatch":
-			return s.triggerManualVerification(ctx, slotID)
-		default:
-			return s.markSlotForInvestigation(ctx, slotID, errorType)
+	case "sensor_error":
+		return s.markSlotForMaintenance(ctx, slotID, "sensor malfunction")
+	case "weight_mismatch":
+		return s.triggerManualVerification(ctx, slotID)
+	default:
+		return s.markSlotForInvestigation(ctx, slotID, errorType)
 	}
 }
 
@@ -306,8 +338,8 @@ func (s *InventoryService) GetShelfStatus(ctx context.Context, shelfID string) (
 		UpdatedAt:     time.Now(),
 	}
 
-    for i, slot := range slots {
-        status.Slots[i] = *slot
+	for i, slot := range slots {
+		status.Slots[i] = *slot
 		switch slot.Status {
 		case entities.SlotStatusEmpty:
 			status.EmptySlots++
@@ -322,16 +354,16 @@ func (s *InventoryService) GetShelfStatus(ctx context.Context, shelfID string) (
 	return status, nil
 }
 
-func (s *InventoryService) validatePlaceMaterialCommand(cmd PlaceMaterialCommand) error {
-	if cmd.MaterialBarcode == "" || cmd.SlotID == "" || cmd.OperatorID == "" {
+func (s *InventoryService) validatePlaceMaterialParams(params PlaceMaterialParams) error {
+	if params.MaterialBarcode == "" || params.SlotID == "" || params.OperatorID == "" {
 		return fmt.Errorf("material barcode, slot ID, and operator ID are required")
 	}
 
 	return nil
 }
 
-func (s *InventoryService) validatePlacementPreconditions(ctx context.Context, cmd PlaceMaterialCommand) error {
-	slot, err := s.slotRepo.GetByID(ctx, cmd.SlotID)
+func (s *InventoryService) validatePlacementPreconditions(ctx context.Context, params PlaceMaterialParams) error {
+	slot, err := s.slotRepo.GetByID(ctx, params.SlotID)
 	if err != nil {
 		return errors.NewNotFoundError("slot not found", err)
 	}
@@ -339,7 +371,7 @@ func (s *InventoryService) validatePlacementPreconditions(ctx context.Context, c
 		return errors.NewConflictError("slot is not available", nil)
 	}
 
-	material, err := s.materialRepo.GetByBarcode(ctx, cmd.MaterialBarcode)
+	material, err := s.materialRepo.GetByBarcode(ctx, params.MaterialBarcode)
 	if err != nil {
 		return errors.NewNotFoundError("material not found", err)
 	}
@@ -350,7 +382,7 @@ func (s *InventoryService) validatePlacementPreconditions(ctx context.Context, c
 	return nil
 }
 
-func (s *InventoryService) executePlaceMaterial(ctx context.Context, cmd PlaceMaterialCommand) (*entities.Operation, error) {
+func (s *InventoryService) executePlaceMaterial(ctx context.Context, params PlaceMaterialParams) (*entities.Operation, error) {
 	tx, err := s.slotRepo.BeginTx(ctx)
 	if err != nil {
 		return nil, errors.NewInternalError("failed to start transaction", err)
@@ -361,8 +393,8 @@ func (s *InventoryService) executePlaceMaterial(ctx context.Context, cmd PlaceMa
 		}
 	}()
 
-	slot, _ := s.slotRepo.GetByID(ctx, cmd.SlotID)
-	material, _ := s.materialRepo.GetByBarcode(ctx, cmd.MaterialBarcode)
+	slot, _ := s.slotRepo.GetByID(ctx, params.SlotID)
+	material, _ := s.materialRepo.GetByBarcode(ctx, params.MaterialBarcode)
 	slot.Status = entities.SlotStatusOccupied
 	slot.MaterialID = &material.ID
 	slot.UpdatedAt = time.Now()
@@ -381,8 +413,8 @@ func (s *InventoryService) executePlaceMaterial(ctx context.Context, cmd PlaceMa
 		ID:         generateUUID(),
 		Type:       entities.OperationTypePlacement,
 		MaterialID: material.ID,
-		SlotID:     cmd.SlotID,
-		OperatorID: cmd.OperatorID,
+		SlotID:     params.SlotID,
+		OperatorID: params.OperatorID,
 		ShelfID:    slot.ShelfID,
 		Timestamp:  time.Now(),
 		Status:     entities.OperationStatusPendingPhysicalConfirmation,
@@ -392,7 +424,7 @@ func (s *InventoryService) executePlaceMaterial(ctx context.Context, cmd PlaceMa
 	}
 
 	if err := tx.Commit(); err != nil {
-		return nil, errors.NewInternalError("failed to commit transaction", err)
+		return nil, errors.NewInternalError("failed to commit transaction", err.Error)
 	}
 
 	// Publish event to request physical placement
@@ -400,20 +432,7 @@ func (s *InventoryService) executePlaceMaterial(ctx context.Context, cmd PlaceMa
 	return operation, nil
 }
 
-func (s *InventoryService) checkForAnomalies(ctx context.Context, operation *entities.Operation, sensorData *SensorData) {
-	if sensorData != nil {
-		// Example anomaly detection: check if the weight is within a reasonable range
-		// This is a simplified example. A real implementation would be more complex.
-		if sensorData.Weight > 1000 { // Assuming weight is in grams
-			s.publishSystemAlertEvent(ctx, "weight_anomaly", "high", "Anomalous weight detected", map[string]interface{}{
-				"operation_id": operation.ID,
-				"weight":       sensorData.Weight,
-			})
-		}
-	}
-}
-
-func (s *InventoryService) executeRemoveMaterial(ctx context.Context, cmd RemoveMaterialCommand, slot *entities.Slot) error {
+func (s *InventoryService) executeRemoveMaterial(ctx context.Context, params RemoveMaterialParams, slot *entities.Slot) error {
 	tx, err := s.slotRepo.BeginTx(ctx)
 	if err != nil {
 		return errors.NewInternalError("failed to start transaction", err)
@@ -429,36 +448,30 @@ func (s *InventoryService) executeRemoveMaterial(ctx context.Context, cmd Remove
 		return errors.NewNotFoundError("material not found", err)
 	}
 
-	slot.Status = entities.SlotStatusEmpty
-	slot.MaterialID = nil
+	slot.Status = entities.SlotStatusRemovalPending
 	slot.UpdatedAt = time.Now()
 	slot.Version++
 	if err := s.slotRepo.UpdateWithTx(ctx, tx, slot); err != nil {
 		return errors.NewConflictError("failed to update slot", err)
 	}
 
-	material.Status = entities.MaterialStatusAvailable
-	material.UpdatedAt = time.Now()
-	if err := s.materialRepo.UpdateWithTx(ctx, tx, material); err != nil {
-		return errors.NewInternalError("failed to update material", err)
-	}
-
 	operation := &entities.Operation{
 		ID:         generateUUID(),
 		Type:       entities.OperationTypeRemoval,
 		MaterialID: material.ID,
-		SlotID:     cmd.SlotID,
-		OperatorID: cmd.OperatorID,
+		SlotID:     params.SlotID,
+		OperatorID: params.OperatorID,
 		ShelfID:    slot.ShelfID,
 		Timestamp:  time.Now(),
-		Status:     entities.OperationStatusCompleted,
+		// Status:     entities.OperationStatusCompleted,
+		Status: entities.OperationStatusPendingRemovalConfirmation,
 	}
 	if err := s.operationRepo.CreateWithTx(ctx, tx, operation); err != nil {
 		return errors.NewInternalError("failed to record operation", err)
 	}
 
 	if err := tx.Commit(); err != nil {
-		return errors.NewInternalError("failed to commit transaction", err)
+		return errors.NewInternalError("failed to commit transaction", err.Error)
 	}
 
 	s.publishMaterialRemovedEvent(ctx, operation)
@@ -466,7 +479,7 @@ func (s *InventoryService) executeRemoveMaterial(ctx context.Context, cmd Remove
 	return nil
 }
 
-func (s *InventoryService) executeMoveMaterial(ctx context.Context, cmd MoveMaterialCommand, fromSlot, toSlot *entities.Slot) error {
+func (s *InventoryService) executeMoveMaterial(ctx context.Context, param MoveMaterialParams, fromSlot, toSlot *entities.Slot) error {
 	tx, err := s.slotRepo.BeginTx(ctx)
 	if err != nil {
 		return errors.NewInternalError("failed to start transaction", err)
@@ -504,8 +517,8 @@ func (s *InventoryService) executeMoveMaterial(ctx context.Context, cmd MoveMate
 		ID:         generateUUID(),
 		Type:       entities.OperationTypeMove,
 		MaterialID: material.ID,
-		SlotID:     cmd.ToSlotID,
-		OperatorID: cmd.OperatorID,
+		SlotID:     param.ToSlotID,
+		OperatorID: param.OperatorID,
 		ShelfID:    toSlot.ShelfID,
 		Timestamp:  time.Now(),
 		Status:     entities.OperationStatusCompleted,
@@ -515,15 +528,15 @@ func (s *InventoryService) executeMoveMaterial(ctx context.Context, cmd MoveMate
 	}
 
 	if err := tx.Commit(); err != nil {
-		return errors.NewInternalError("failed to commit transaction", err)
+		return errors.NewInternalError("failed to commit transaction", err.Error)
 	}
 
-	s.publishMaterialMovedEvent(ctx, operation, cmd.FromSlotID)
+	s.publishMaterialMovedEvent(ctx, operation, param.FromSlotID)
 
 	return nil
 }
 
-func (s *InventoryService) executeReserveSlots(ctx context.Context, cmd ReserveSlotsCommand, slotShelfMap map[string]string) error {
+func (s *InventoryService) executeReserveSlots(ctx context.Context, params ReserveSlotsParams, slotShelfMap map[string]string) error {
 	tx, err := s.slotRepo.BeginTx(ctx)
 	if err != nil {
 		return errors.NewInternalError("failed to start transaction", err)
@@ -533,7 +546,7 @@ func (s *InventoryService) executeReserveSlots(ctx context.Context, cmd ReserveS
 			tx.Rollback()
 		}
 	}()
-	for _, slotID := range cmd.SlotIDs {
+	for _, slotID := range params.SlotIDs {
 		slot, err := s.slotRepo.GetByID(ctx, slotID)
 		if err != nil {
 			return errors.NewNotFoundError(fmt.Sprintf("slot %s not found", slotID), err)
@@ -544,12 +557,12 @@ func (s *InventoryService) executeReserveSlots(ctx context.Context, cmd ReserveS
 		slot.Status = entities.SlotStatusReserved
 		slot.UpdatedAt = time.Now()
 		slot.Version++
-	if err := s.slotRepo.UpdateWithTx(ctx, tx, slot); err != nil {
-		return errors.NewConflictError(fmt.Sprintf("failed to reserve slot %s", slotID), err)
-	}
+		if err := s.slotRepo.UpdateWithTx(ctx, tx, slot); err != nil {
+			return errors.NewConflictError(fmt.Sprintf("failed to reserve slot %s", slotID), err)
+		}
 	}
 	if err := tx.Commit(); err != nil {
-		return errors.NewInternalError("failed to commit transaction", err)
+		return errors.NewInternalError("failed to commit transaction", err.Error)
 	}
 	return nil
 }
@@ -568,19 +581,19 @@ func (s *InventoryService) selectBestSlot(slots []*entities.Slot, materialType s
 	return nil, fmt.Errorf("no empty slots")
 }
 
-func (s *InventoryService) groupCommandsByShelf(commands []PlaceMaterialCommand) (map[string][]PlaceMaterialCommand, error) {
-	shelfGroups := make(map[string][]PlaceMaterialCommand)
-	for _, cmd := range commands {
-		slot, err := s.slotRepo.GetByID(context.Background(), cmd.SlotID)
+func (s *InventoryService) groupCommandsByShelf(params []PlaceMaterialParams) (map[string][]PlaceMaterialParams, error) {
+	shelfGroups := make(map[string][]PlaceMaterialParams)
+	for _, p := range params {
+		slot, err := s.slotRepo.GetByID(context.Background(), p.SlotID)
 		if err != nil {
-			return nil, errors.NewNotFoundError(fmt.Sprintf("slot %s not found", cmd.SlotID), err)
+			return nil, errors.NewNotFoundError(fmt.Sprintf("slot %s not found", p.SlotID), err)
 		}
-		shelfGroups[slot.ShelfID] = append(shelfGroups[slot.ShelfID], cmd)
+		shelfGroups[slot.ShelfID] = append(shelfGroups[slot.ShelfID], p)
 	}
 	return shelfGroups, nil
 }
 
-func (s *InventoryService) executeBatchPlacement(ctx context.Context, commands []PlaceMaterialCommand) error {
+func (s *InventoryService) executeBatchPlacement(ctx context.Context, params []PlaceMaterialParams) error {
 	tx, err := s.slotRepo.BeginTx(ctx)
 	if err != nil {
 		return errors.NewInternalError("failed to start transaction", err)
@@ -590,13 +603,15 @@ func (s *InventoryService) executeBatchPlacement(ctx context.Context, commands [
 			tx.Rollback()
 		}
 	}()
-	for _, cmd := range commands {
-		_, err := s.executePlaceMaterial(ctx, cmd)
+	
+	for _, p := range params {
+		_, err := s.executePlaceMaterial(ctx, p)
 		if err != nil {
 			return err // Or collect errors and return them all
 		}
 	}
-	return tx.Commit()
+
+	return tx.Commit().Error
 }
 
 func (s *InventoryService) markSlotForMaintenance(ctx context.Context, slotID, reason string) error {
@@ -637,6 +652,20 @@ func (s *InventoryService) markSlotForInvestigation(ctx context.Context, slotID,
 	return nil
 }
 
+func (s *InventoryService) publishSystemAlertEvent(ctx context.Context, alertType entities.AlertType, severity entities.AlertSeverity, message string, details map[string]interface{}) {
+	event := &entities.SystemAlertEvent{
+		Type:      alertType,
+		Severity:  severity,
+		Message:   message,
+		Timestamp: time.Now(),
+		Details:   details,
+	}
+
+	if err := s.eventService.PublishEvent(ctx, "system_alert", event); err != nil {
+		logger.Error("Failed to publish system alert event", err)
+	}
+}
+
 func (s *InventoryService) acquireMultipleShelfLocks(ctx context.Context, shelfIDs []string) []func() {
 	unlockFuncs := make([]func(), 0)
 	for _, shelfID := range shelfIDs {
@@ -656,7 +685,7 @@ func (s *InventoryService) releaseMultipleLocks(unlockFuncs []func()) {
 	}
 }
 
-func (s *InventoryService) searchMaterials(ctx context.Context, query string, limit, offset int) ([]*entities.Material, error) {
+func (s *InventoryService) SearchMaterials(ctx context.Context, query string, limit, offset int) ([]*entities.Material, error) {
 	// Search materials by barcode or name
 	materials, err := s.materialRepo.Search(ctx, query, limit, offset)
 	if err != nil {
@@ -702,13 +731,70 @@ func (s *InventoryService) ConfirmPhysicalPlacement(ctx context.Context, operati
 	}
 
 	if err := tx.Commit(); err != nil {
-		return errors.NewInternalError("failed to commit transaction", err)
+		return errors.NewInternalError("failed to commit transaction", err.Error)
 	}
 
 	// Publish material placed event (now that physical placement is confirmed)
 	s.publishMaterialPlacedEvent(ctx, operation)
 	// s.publishPhysicalPlacementConfirmedEvent(ctx, operation) // This event is now handled by material.placed
 
+	return nil
+}
+
+func (s *InventoryService) ConfirmPhysicalRemoval(ctx context.Context, operationID string, unplanned bool) error {
+	operation, err := s.operationRepo.GetByID(ctx, operationID)
+	if err != nil {
+		return errors.NewNotFoundError("operation not found", err)
+	}
+
+	if operation.Status != entities.OperationStatusPendingRemovalConfirmation {
+		return errors.NewConflictError(fmt.Sprintf("operation %s is not in pending physical removal status", operationID), nil)
+	}
+
+	tx, err := s.operationRepo.BeginTx(ctx)
+	if err != nil {
+		return errors.NewInternalError("failed to start transaction", err)
+	}
+	defer func() {
+		if err != nil {
+			tx.Rollback()
+		}
+	}()
+
+	slot, err := s.slotRepo.GetByID(ctx, operation.SlotID)
+	if err != nil {
+		return errors.NewNotFoundError("slot not found for confirmation", err)
+	}
+	slot.Status = entities.SlotStatusEmpty
+	slot.MaterialID = nil
+	slot.UpdatedAt = time.Now()
+	slot.Version++
+	if err := s.slotRepo.UpdateWithTx(ctx, tx, slot); err != nil {
+		return errors.NewInternalError("failed to update slot status", err)
+	}
+
+	material, err := s.materialRepo.GetByID(ctx, operation.MaterialID)
+	if err != nil {
+		return errors.NewNotFoundError("material not found for confirmation", err)
+	}
+	material.Status = entities.MaterialStatusAvailable
+	material.UpdatedAt = time.Now()
+	if err := s.materialRepo.UpdateWithTx(ctx, tx, material); err != nil {
+		return errors.NewInternalError("failed to update material", err)
+	}
+
+	operation.Status = entities.OperationStatusCompleted
+	operation.Timestamp = time.Now()
+	if err := s.operationRepo.UpdateWithTx(ctx, tx, operation); err != nil {
+		return errors.NewInternalError("failed to update operation status", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return errors.NewInternalError("failed to commit transaction", err.Error)
+	}
+
+	s.publishMaterialRemovedEvent(ctx, operation)
+	
 	return nil
 }
 
@@ -768,8 +854,31 @@ func (s *InventoryService) HandlePhysicalPlacementTimeout(ctx context.Context, o
 	s.publishPhysicalPlacementFailedEvent(ctx, operation)
 
 	if err := tx.Commit(); err != nil {
-		return errors.NewInternalError("failed to commit transaction", err)
+		return errors.NewInternalError("failed to commit transaction", err.Error)
 	}
+
+	return nil
+}
+
+func (s *InventoryService) HandlePhysicalRemovalTimeout(ctx context.Context, operationID string) error {
+	operation, err := s.operationRepo.GetByID(ctx, operationID)
+	if err != nil {
+		return errors.NewNotFoundError("operation not found", err)
+	}
+
+	if operation.Status != entities.OperationStatusPendingRemovalConfirmation {
+		return errors.NewConflictError(fmt.Sprintf("operation %s is not in pending physical confirmation status", operationID), nil)
+	}
+
+	tx, err := s.operationRepo.BeginTx(ctx)
+	if err != nil {
+		return errors.NewInternalError("failed to start transaction", err)
+	}
+	defer func() {
+		if err != nil {
+			tx.Rollback()
+		}
+	}()
 
 	return nil
 }
@@ -780,7 +889,7 @@ func (s *InventoryService) HandleMaterialDetectedEvent(ctx context.Context, slot
 	// First, try to find a pending physical confirmation operation for this slot
 	operations, err := s.operationRepo.GetPendingPhysicalConfirmationsBySlotID(ctx, slotID)
 	if err != nil {
-		logger.Error(fmt.Sprintf("Failed to query pending operations for slot %s: %v", slotID, err))
+		logger.Error(fmt.Sprintf("Failed to query pending operations for slot %s: %v", slotID, err), err)
 		return err
 	}
 
@@ -793,165 +902,28 @@ func (s *InventoryService) HandleMaterialDetectedEvent(ctx context.Context, slot
 	}
 
 	// If no matching pending operation is found, it's an unplanned placement
-	logger.Warn(fmt.Sprintf("Unplanned material detected in slot %s with barcode %s. Triggering alert.", slotID, materialBarcode))
+	logger.Info(fmt.Sprintf("Unplanned material detected in slot %s with barcode %s. Triggering alert.", slotID, materialBarcode))
 	s.publishUnplannedPlacementEvent(ctx, slotID, materialBarcode)
 
 	return nil
 }
 
-func (s *InventoryService) publishPhysicalPlacementRequestedEvent(ctx context.Context, operation *entities.Operation) {
-	event := struct {
-		OperationID string    `json:"operation_id"`
-		MaterialID  string    `json:"material_id"`
-		SlotID      string    `json:"slot_id"`
-		ShelfID     string    `json:"shelf_id"`
-		OperatorID  string    `json:"operator_id"`
-		Timestamp   time.Time `json:"timestamp"`
-	}{
-		OperationID: operation.ID,
-		MaterialID:  operation.MaterialID,
-		SlotID:      operation.SlotID,
-		ShelfID:     operation.ShelfID,
-		OperatorID:  operation.OperatorID,
-		Timestamp:   time.Now(),
+func (s *InventoryService) HandleMaterialRemovedEvent(ctx context.Context, slotID string, materialBarcode string) error {
+	operations, err := s.operationRepo.GetPendingRemovalConfirmationsBySlotID(ctx, slotID)
+	if err != nil {
+		logger.Error(fmt.Sprintf("Failed to query pending operations for slot %s: %v", slotID, err), err)
+		return err
 	}
 
-	if err := s.eventService.PublishEvent(ctx, EventTypePhysicalPlacementRequested, event); err != nil {
-		logger.Error("Failed to publish physical placement requested event", err)
-		s.scheduleEventRetry(ctx, EventTypePhysicalPlacementRequested, EventTypePhysicalPlacementRequested, event, err)
-	}
-}
-
-func (s *InventoryService) publishPhysicalPlacementConfirmedEvent(ctx context.Context, operation *entities.Operation) {
-	event := struct {
-		OperationID string    `json:"operation_id"`
-		MaterialID  string    `json:"material_id"`
-		SlotID      string    `json:"slot_id"`
-		ShelfID     string    `json:"shelf_id"`
-		OperatorID  string    `json:"operator_id"`
-		Timestamp   time.Time `json:"timestamp"`
-	}{
-		OperationID: operation.ID,
-		MaterialID:  operation.MaterialID,
-		SlotID:      operation.SlotID,
-		ShelfID:     operation.ShelfID,
-		OperatorID:  operation.OperatorID,
-		Timestamp:   time.Now(),
+	for _, op := range operations {
+		if op.Status == entities.OperationStatusPendingRemovalConfirmation {
+			logger.Info(fmt.Sprintf("Confirming removal for operation %s in slot %s", op.ID, slotID))
+			return s.ConfirmPhysicalRemoval(ctx, op.ID, false)
+		}
 	}
 
-	if err := s.eventService.PublishEvent(ctx, EventTypePhysicalPlacementConfirmed, event); err != nil {
-		logger.Error("Failed to publish physical placement confirmed event", err)
-		s.scheduleEventRetry(ctx, EventTypePhysicalPlacementConfirmed, EventTypePhysicalPlacementConfirmed, event, err)
-	}
-}
-
-func (s *InventoryService) publishPhysicalPlacementFailedEvent(ctx context.Context, operation *entities.Operation) {
-	event := struct {
-		OperationID string    `json:"operation_id"`
-		MaterialID  string    `json:"material_id"`
-		SlotID      string    `json:"slot_id"`
-		ShelfID     string    `json:"shelf_id"`
-		OperatorID  string    `json:"operator_id"`
-		Timestamp   time.Time `json:"timestamp"`
-	}{
-		OperationID: operation.ID,
-		MaterialID:  operation.MaterialID,
-		SlotID:      operation.SlotID,
-		ShelfID:     operation.ShelfID,
-		OperatorID:  operation.OperatorID,
-		Timestamp:   time.Now(),
-	}
-
-	if err := s.eventService.PublishEvent(ctx, EventTypePhysicalPlacementFailed, event); err != nil {
-		logger.Error("Failed to publish physical placement failed event", err)
-		s.scheduleEventRetry(ctx, EventTypePhysicalPlacementFailed, EventTypePhysicalPlacementFailed, event, err)
-	}
-}
-
-func (s *InventoryService) publishUnplannedPlacementEvent(ctx context.Context, slotID, materialBarcode string) {
-	event := struct {
-		SlotID        string    `json:"slot_id"`
-		MaterialBarcode string    `json:"material_barcode"`
-		Timestamp     time.Time `json:"timestamp"`
-	}{
-		SlotID:        slotID,
-		MaterialBarcode: materialBarcode,
-		Timestamp:     time.Now(),
-	}
-
-	if err := s.eventService.PublishEvent(ctx, EventTypeUnplannedPlacement, event); err != nil {
-		logger.Error("Failed to publish unplanned placement event", err)
-		s.scheduleEventRetry(ctx, EventTypeUnplannedPlacement, EventTypeUnplannedPlacement, event, err)
-	}
-}
-
-func (s *InventoryService) publishMaterialPlacedEvent(ctx context.Context, operation *entities.Operation) {
-	event := struct {
-		EventID    string    `json:"event_id"`
-		MaterialID string    `json:"material_id"`
-		SlotID     string    `json:"slot_id"`
-		ShelfID    string    `json:"shelf_id"`
-		OperatorID string    `json:"operator_id"`
-		Timestamp  time.Time `json:"timestamp"`
-	}{
-		EventID:    generateUUID(),
-		MaterialID: operation.MaterialID,
-		SlotID:     operation.SlotID,
-		ShelfID:    operation.ShelfID,
-		OperatorID: operation.OperatorID,
-		Timestamp:  time.Now(),
-	}
-
-	if err := s.eventService.PublishEvent(ctx, EventTypeMaterialPlaced, event); err != nil {
-		logger.Error("Failed to publish material placed event", err)
-		s.scheduleEventRetry(ctx, EventTypeMaterialPlaced, EventTypeMaterialPlaced, event, err)
-	}
-}
-
-func (s *InventoryService) publishMaterialRemovedEvent(ctx context.Context, operation *entities.Operation) {
-	event := struct {
-		EventID    string    `json:"event_id"`
-		MaterialID string    `json:"material_id"`
-		SlotID     string    `json:"slot_id"`
-		ShelfID    string    `json:"shelf_id"`
-		OperatorID string    `json:"operator_id"`
-		Timestamp  time.Time `json:"timestamp"`
-	}{
-		EventID:    generateUUID(),
-		MaterialID: operation.MaterialID,
-		SlotID:     operation.SlotID,
-		ShelfID:    operation.ShelfID,
-		OperatorID: operation.OperatorID,
-		Timestamp:  time.Now(),
-	}
-
-	if err := s.eventService.PublishEvent(ctx, EventTypeMaterialRemoved, event); err != nil {
-		logger.Error("Failed to publish material removed event", err)
-		s.scheduleEventRetry(ctx, EventTypeMaterialRemoved, EventTypeMaterialRemoved, event, err)
-	}
-}
-
-func (s *InventoryService) publishMaterialMovedEvent(ctx context.Context, operation *entities.Operation, fromSlotID string) {
-	event := struct {
-		EventID    string    `json:"event_id"`
-		MaterialID string    `json:"material_id"`
-		FromSlotID string    `json:"from_slot_id"`
-		ToSlotID   string    `json:"to_slot_id"`
-		ShelfID    string    `json:"shelf_id"`
-		OperatorID string    `json:"operator_id"`
-		Timestamp  time.Time `json:"timestamp"`
-	}{
-		EventID:    generateUUID(),
-		MaterialID: operation.MaterialID,
-		FromSlotID: fromSlotID,
-		ToSlotID:   operation.SlotID,
-		ShelfID:    operation.ShelfID,
-		OperatorID: operation.OperatorID,
-		Timestamp:  time.Now(),
-	}
-
-	if err := s.eventService.PublishEvent(ctx, EventTypeMaterialMoved, event); err != nil {
-		logger.Error("Failed to publish material moved event", err)
-		s.scheduleEventRetry(ctx, EventTypeMaterialMoved, EventTypeMaterialMoved, event, err)
-	}
+	logger.Info(fmt.Sprintf("Unplanned removal detected in slot %s with barcode %s. Triggering alert.", slotID, materialBarcode))
+	s.publishUnplannedRemovalEvent(ctx, slotID, materialBarcode)
+	
+	return s.ConfirmPhysicalRemoval(ctx, slotID, true)
 }

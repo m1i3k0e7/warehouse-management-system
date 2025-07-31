@@ -14,6 +14,7 @@ type Config struct {
 	Kafka       KafkaConfig
 	LogLevel    string
 	Service     ServiceConfig
+	MQTT		MQTTConfig
 }
 
 type ServerConfig struct {
@@ -44,12 +45,16 @@ type KafkaConfig struct {
 	Topic   string
 }
 
+type MQTTConfig struct {
+	BrokerURL string
+}
+
 type ServiceConfig struct {
 	RetryCount                         int
 	RetryDelay                         time.Duration
-	AllowOrigins                       string
-	PhysicalConfirmationTimeout        time.Duration
-	PhysicalConfirmationTimeoutCheckInterval time.Duration
+	AllowedOrigins                       string
+	PhysicalOperationTimeout        time.Duration
+	PhysicalOperationTimeoutCheckInterval time.Duration
 }
 
 func Load() *Config {
@@ -83,9 +88,12 @@ func Load() *Config {
 		Service: ServiceConfig{
 			RetryCount:                         parseInt(getEnv("RETRY_COUNT", "5")),
 			RetryDelay:                         parseDuration(getEnv("RETRY_DELAY", "2s")),
-			AllowOrigins:                       getEnv("ALLOW_ORIGINS", "*"),
-			PhysicalConfirmationTimeout:        parseDuration(getEnv("PHYSICAL_CONFIRMATION_TIMEOUT", "5m")),
-			PhysicalConfirmationTimeoutCheckInterval: parseDuration(getEnv("PHYSICAL_CONFIRMATION_TIMEOUT_CHECK_INTERVAL", "1m")),
+			AllowedOrigins:                       getEnv("ALLOW_ORIGINS", "*"),
+			PhysicalOperationTimeout:        parseDuration(getEnv("PHYSICAL_OPERATION_TIMEOUT", "5m")),
+			PhysicalOperationTimeoutCheckInterval: parseDuration(getEnv("PHYSICAL_OPERATION_TIMEOUT_CHECK_INTERVAL", "1m")),
+		},
+		MQTT: MQTTConfig{
+			BrokerURL: getEnv("MQTT_BROKER_URL", "tcp://localhost:1883"),
 		},
 	}
 }

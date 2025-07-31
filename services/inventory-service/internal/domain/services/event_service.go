@@ -5,7 +5,7 @@ import (
     "encoding/json"
     
     "github.com/IBM/sarama"
-    "warehouse/pkg/logger"
+    "WMS/services/inventory-service/pkg/utils/logger"
 )
 
 type EventService struct {

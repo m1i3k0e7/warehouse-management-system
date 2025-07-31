@@ -4,7 +4,7 @@ import (
     "time"
     
     "github.com/gin-gonic/gin"
-    "warehouse/pkg/logger"
+    "fmt"
 )
 
 func RequestLogger() gin.HandlerFunc {

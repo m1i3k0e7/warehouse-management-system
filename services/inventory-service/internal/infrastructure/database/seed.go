@@ -2,8 +2,8 @@ package database
 
 import (
 	"fmt"
-	"inventory-service/internal/domain/entities"
-	"inventory-service/pkg/utils"
+	"WMS/services/inventory-service/internal/domain/entities"
+	"WMS/services/inventory-service/pkg/utils"
 	"time"
 	
 	"gorm.io/gorm"

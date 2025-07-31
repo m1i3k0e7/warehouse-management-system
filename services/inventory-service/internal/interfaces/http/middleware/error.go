@@ -4,8 +4,8 @@ import (
     "net/http"
     
     "github.com/gin-gonic/gin"
-    "warehouse/pkg/errors"
-    "warehouse/pkg/logger"
+    "WMS/services/inventory-service/pkg/errors"
+    "WMS/services/inventory-service/pkg/utils/logger"
 )
 
 func ErrorHandler() gin.HandlerFunc {

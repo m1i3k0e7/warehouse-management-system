@@ -2,11 +2,11 @@ package commands
 
 import (
 	"context"
-	"warehouse/internal/domain/services"
+	"WMS/services/inventory-service/internal/domain/services"
 )
 
 type BatchPlaceMaterialsCommand struct {
-	Commands []services.PlaceMaterialCommand
+	Commands []PlaceMaterialCommand
 }
 
 type BatchPlaceMaterialsCommandHandler struct {
@@ -18,5 +18,13 @@ func NewBatchPlaceMaterialsCommandHandler(inventoryService *services.InventorySe
 }
 
 func (h *BatchPlaceMaterialsCommandHandler) Handle(ctx context.Context, cmd BatchPlaceMaterialsCommand) error {
-	return h.inventoryService.BatchPlaceMaterials(ctx, cmd.Commands)
+	params := make([]services.PlaceMaterialParams, len(cmd.Commands))
+	for i, c := range cmd.Commands {
+		params[i] = services.PlaceMaterialParams{
+			MaterialBarcode: c.MaterialBarcode,
+			SlotID:          c.SlotID,
+			OperatorID:      c.OperatorID,
+		}
+	}
+	return h.inventoryService.BatchPlaceMaterials(ctx, params)
 }

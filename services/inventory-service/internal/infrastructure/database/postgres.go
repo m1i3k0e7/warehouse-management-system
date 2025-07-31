@@ -2,8 +2,8 @@ package database
 
 import (
 	"fmt"
-	"inventory-service/internal/config"
-	"inventory-service/internal/domain/entities"
+	"WMS/services/inventory-service/internal/domain/entities"
+	"WMS/services/inventory-service/internal/config"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"

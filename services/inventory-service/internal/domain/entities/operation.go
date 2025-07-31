@@ -21,6 +21,7 @@ const (
 	OperationStatusFailed                    OperationStatus = "failed"
 	OperationStatusCancelled                 OperationStatus = "cancelled"
 	OperationStatusPendingPhysicalConfirmation OperationStatus = "pending_physical_confirmation"
+	OperationStatusPendingRemovalConfirmation OperationStatus = "pending_removal_confirmation"
 )
 
 type Operation struct {

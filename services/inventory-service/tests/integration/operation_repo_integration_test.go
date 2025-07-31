@@ -6,8 +6,8 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
-	"warehouse/internal/domain/entities"
-	"warehouse/internal/infrastructure/database/repositories"
+	"WMS/services/inventory-service/internal/domain/entities"
+	"WMS/services/inventory-service/internal/infrastructure/database/repositories"
 )
 
 func TestOperationRepository_Create(t *testing.T) {

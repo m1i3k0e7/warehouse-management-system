@@ -2,7 +2,7 @@ package commands
 
 import (
 	"context"
-	"warehouse/internal/domain/services"
+	"WMS/services/inventory-service/internal/domain/services"
 )
 
 type RemoveMaterialCommand struct {
@@ -20,7 +20,7 @@ func NewRemoveMaterialCommandHandler(inventoryService *services.InventoryService
 }
 
 func (h *RemoveMaterialCommandHandler) Handle(ctx context.Context, cmd RemoveMaterialCommand) error {
-	return h.inventoryService.RemoveMaterial(ctx, services.RemoveMaterialCommand{
+	return h.inventoryService.RemoveMaterial(ctx, services.RemoveMaterialParams{
 		SlotID:     cmd.SlotID,
 		OperatorID: cmd.OperatorID,
 		Reason:     cmd.Reason,

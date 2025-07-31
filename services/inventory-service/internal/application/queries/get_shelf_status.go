@@ -2,8 +2,8 @@ package queries
 
 import (
 	"context"
-	"warehouse/internal/domain/entities"
-	"warehouse/internal/domain/services"
+	"WMS/services/inventory-service/internal/domain/entities"
+	"WMS/services/inventory-service/internal/domain/services"
 )
 
 type GetShelfStatusQuery struct {

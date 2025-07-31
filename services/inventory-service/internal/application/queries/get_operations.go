@@ -2,8 +2,8 @@ package queries
 
 import (
 	"context"
-	"warehouse/internal/domain/entities"
-	"warehouse/internal/domain/repositories"
+	"WMS/services/inventory-service/internal/domain/entities"
+	"WMS/services/inventory-service/internal/domain/repositories"
 )
 
 type GetOperationsQuery struct {

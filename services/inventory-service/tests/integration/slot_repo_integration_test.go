@@ -7,8 +7,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"gorm.io/gorm"
-	"warehouse/internal/domain/entities"
-	"warehouse/internal/infrastructure/database/repositories"
+	"WMS/services/inventory-service/internal/domain/entities"
+	"WMS/services/inventory-service/internal/infrastructure/database/repositories"
 )
 
 func TestSlotRepository_Create(t *testing.T) {

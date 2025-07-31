@@ -3,7 +3,7 @@ package repositories
 
 import (
 	"context"
-	"inventory-service/internal/domain/entities"
+	"WMS/services/inventory-service/internal/domain/entities"
 )
 
 // FailedEventRepository defines the interface for interacting with the failed_events table.

@@ -6,9 +6,9 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
-	"warehouse/internal/application/queries"
-	"warehouse/internal/domain/entities"
-	"warehouse/internal/domain/repositories"
+	"WMS/services/inventory-service/internal/application/queries"
+	"WMS/services/inventory-service/internal/domain/entities"
+	"WMS/services/inventory-service/internal/domain/repositories"
 )
 
 // MockOperationRepository is a mock type for the OperationRepository

@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/go-redis/redis/v8"
-	"warehouse/internal/config"
+	"WMS/services/inventory-service/internal/config"
 )
 
 // NewRedisClient initializes and returns a new Redis client.

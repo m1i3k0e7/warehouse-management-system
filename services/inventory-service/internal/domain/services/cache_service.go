@@ -11,6 +11,7 @@ import (
     "time"
     
     "github.com/go-redis/redis/v8"
+    "WMS/services/inventory-service/internal/domain/entities"
 )
 
 type CacheService struct {

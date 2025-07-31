@@ -2,10 +2,7 @@ package commands
 
 import (
 	"context"
-	"warehouse/internal/domain/entities"
-	"warehouse/internal/domain/repositories"
-	"warehouse/internal/domain/services"
-	"warehouse/pkg/errors"
+	"WMS/services/inventory-service/internal/domain/services"
 )
 
 type PlaceMaterialCommand struct {
@@ -23,7 +20,7 @@ func NewPlaceMaterialCommandHandler(inventoryService *services.InventoryService)
 }
 
 func (h *PlaceMaterialCommandHandler) Handle(ctx context.Context, cmd PlaceMaterialCommand) error {
-	return h.inventoryService.PlaceMaterial(ctx, services.PlaceMaterialCommand{
+	return h.inventoryService.PlaceMaterial(ctx, services.PlaceMaterialParams{
 		MaterialBarcode: cmd.MaterialBarcode,
 		SlotID:          cmd.SlotID,
 		OperatorID:      cmd.OperatorID,

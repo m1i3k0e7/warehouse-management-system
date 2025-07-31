@@ -7,10 +7,9 @@ import (
 	"time"
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
-	"warehouse/internal/application/commands"
-	"warehouse/internal/domain/entities"
-	"warehouse/internal/domain/services"
-	"warehouse/pkg/logger"
+	"WMS/services/inventory-service/internal/application/commands"
+	"WMS/services/inventory-service/internal/domain/services"
+	"WMS/services/inventory-service/pkg/utils/logger"
 )
 
 // MQTT message structure for shelf events and status updates
@@ -81,7 +80,7 @@ func NewMQTTHandler(
 		handleSlotErrorHandler:   handleSlotErrorHandler,
 		updateShelfStatusHandler: updateShelfStatusHandler,
 		inventoryService:         inventoryService, // Initialize new dependency
-		topicPrefix:              "warehouse/shelf",
+		topicPrefix:              "WMS/services/inventory-service/shelf",
 		retryService:             retryService,
 	}
 }
@@ -121,30 +120,25 @@ func (h *MQTTHandler) handleShelfEvent(client mqtt.Client, msg mqtt.Message) {
 }
 
 func (h *MQTTHandler) processShelfEvent(event *ShelfEvent) error {
-	ctx := context.WithTimeout(context.Background(), 30*time.Second)
-	defer ctx.Done()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
 
 	switch event.EventType {
-	case services.EventTypeMaterialDetected:
-		// This is the key change: when material is detected, call the new handler in InventoryService
-		return h.inventoryService.HandleMaterialDetectedEvent(ctx, event.SlotID, event.MaterialBarcode)
+		case services.EventTypeMaterialDetected:
+			return h.inventoryService.HandleMaterialDetectedEvent(ctx, event.SlotID, event.MaterialBarcode)
 
-	case services.EventTypeMaterialRemoved:
-		cmd := commands.RemoveMaterialCommand{
-			SlotID:     event.SlotID,
-			OperatorID: "SHELF_SYSTEM",
-		}
-		return h.removeMaterialHandler.Handle(ctx, cmd)
+		case services.EventTypeMaterialRemoved:
+			return h.inventoryService.HandleMaterialRemovedEvent(ctx, event.SlotID, event.MaterialBarcode)
 
-	case services.EventTypeSlotError:
-		cmd := commands.HandleSlotErrorCommand{
-			SlotID:    event.SlotID,
-			ErrorType: string(entities.AlertTypeSlotError),
-		}
-		return h.handleSlotErrorHandler.Handle(ctx, cmd)
+		// case services.EventTypeSlotError:
+		// 	cmd := commands.HandleSlotErrorCommand{
+		// 		SlotID:    event.SlotID,
+		// 		ErrorType: string(entities.AlertTypeSlotError),
+		// 	}
+		// 	return h.handleSlotErrorHandler.Handle(ctx, cmd)
 
-	default:
-		return fmt.Errorf("unknown event type: %s", event.EventType)
+		default:
+			return fmt.Errorf("unknown event type: %s", event.EventType)
 	}
 }
 

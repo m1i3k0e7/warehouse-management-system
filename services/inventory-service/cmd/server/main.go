@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -12,18 +11,17 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"warehouse/internal/config"
-	"warehouse/internal/infrastructure/cache"
-	"warehouse/internal/infrastructure/database"
-	"warehouse/internal/infrastructure/messaging"
-	"warehouse/internal/application/commands"
-	"warehouse/internal/application/queries"
-	"warehouse/internal/domain/repositories"
-	"warehouse/internal/domain/services"
-	"warehouse/internal/interfaces/http/handlers"
-	"warehouse/internal/interfaces/http/router"
-	"warehouse/internal/interfaces/mqtt"
-	"warehouse/pkg/logger"
+	"WMS/services/inventory-service/internal/config"
+	"WMS/services/inventory-service/internal/infrastructure/cache"
+	"WMS/services/inventory-service/internal/infrastructure/database"
+	"WMS/services/inventory-service/internal/application/commands"
+	"WMS/services/inventory-service/internal/application/queries"
+	"WMS/services/inventory-service/internal/domain/repositories"
+	"WMS/services/inventory-service/internal/domain/services"
+	"WMS/services/inventory-service/internal/interfaces/http/handlers"
+	"WMS/services/inventory-service/internal/interfaces/http/router"
+	"WMS/services/inventory-service/internal/interfaces/mqtt"
+	"WMS/services/inventory-service/pkg/utils/logger"
 )
 
 func main() {
@@ -110,22 +108,33 @@ func main() {
 
 	// Timeout Scheduler for Pending Physical Confirmations
 	go func() {
-		ticker := time.NewTicker(cfg.ServiceConfig.PhysicalConfirmationTimeoutCheckInterval)
+		ticker := time.NewTicker(cfg.Service.PhysicalOperationTimeoutCheckInterval)
 		defer ticker.Stop()
 
 		for range ticker.C {
 			ctx := context.Background()
 			// Query operations that are pending physical confirmation and have timed out
-			timedOutOperations, err := operationRepo.GetTimedOutPendingPhysicalConfirmations(ctx, cfg.ServiceConfig.PhysicalConfirmationTimeout)
+			timedOutPlacementOperations, err := operationRepo.GetTimedOutPendingPhysicalConfirmations(ctx, cfg.Service.PhysicalOperationTimeout)
 			if err != nil {
 				logger.Error("Failed to query timed out operations", err)
-				continue
+			} else {
+				for _, op := range timedOutPlacementOperations {
+					logger.Warn(fmt.Sprintf("Physical placement operation %s timed out. Initiating rollback.", op.ID))
+					if err := inventoryService.HandlePhysicalPlacementTimeout(ctx, op.ID); err != nil {
+						logger.Error(fmt.Sprintf("Failed to handle timeout for operation %s", op.ID), err)
+					}
+				}
 			}
 
-			for _, op := range timedOutOperations {
-				logger.Warn(fmt.Sprintf("Physical placement operation %s timed out. Initiating rollback.", op.ID))
-				if err := inventoryService.HandlePhysicalPlacementTimeout(ctx, op.ID); err != nil {
-					logger.Error(fmt.Sprintf("Failed to handle timeout for operation %s", op.ID), err)
+			timeOutRemovalOperations, err := operationRepo.GetTimedOutPendingRemovalConfirmations(ctx, cfg.Service.PhysicalOperationTimeout)
+			if err != nil {
+				logger.Error("Failed to query timed out removal operations", err)
+				continue
+			}
+			for _, op := range timeOutRemovalOperations {
+				logger.Warn(fmt.Sprintf("Physical removal operation %s timed out. Initiating rollback.", op.ID))
+				if err := inventoryService.HandlePhysicalRemovalTimeout(ctx, op.ID); err != nil {
+					logger.Error(fmt.Sprintf("Failed to handle timeout for removal operation %s", op.ID), err)
 				}
 			}
 		}

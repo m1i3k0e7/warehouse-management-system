@@ -46,6 +46,16 @@ type Alert struct {
 	Metadata   JSON        `json:"metadata" gorm:"type:jsonb"`
 }
 
+type SystemAlertEvent struct {
+	ID    		string    `json:"alert_id"`
+	Type  		AlertType `json:"alert_type"`
+	Severity    AlertSeverity `json:"severity"`
+	Message 	string    `json:"message"`
+	Timestamp 	time.Time `json:"timestamp"`
+	Details  	JSON      `json:"details" gorm:"type:jsonb"`
+}
+	
+
 // JSON type for GORM
 type JSON map[string]interface{}
 

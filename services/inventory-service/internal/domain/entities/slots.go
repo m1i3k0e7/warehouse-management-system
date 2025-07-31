@@ -11,6 +11,7 @@ const (
 	SlotStatusOccupied    SlotStatus = "occupied"
 	SlotStatusReserved    SlotStatus = "reserved"
 	SlotStatusMaintenance SlotStatus = "maintenance"
+	SlotStatusRemovalPending SlotStatus = "removal_pending"
 )
 
 type Slot struct {

@@ -9,7 +9,7 @@ import (
     "math"
     "time"
     
-    "warehouse/pkg/logger"
+    "WMS/services/inventory-service/pkg/utils/logger"
 )
 
 type RetryService struct {

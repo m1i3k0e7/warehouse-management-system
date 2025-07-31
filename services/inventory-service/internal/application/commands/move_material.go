@@ -2,7 +2,7 @@ package commands
 
 import (
 	"context"
-	"warehouse/internal/domain/services"
+	"WMS/services/inventory-service/internal/domain/services"
 )
 
 type MoveMaterialCommand struct {
@@ -21,7 +21,7 @@ func NewMoveMaterialCommandHandler(inventoryService *services.InventoryService) 
 }
 
 func (h *MoveMaterialCommandHandler) Handle(ctx context.Context, cmd MoveMaterialCommand) error {
-	return h.inventoryService.MoveMaterial(ctx, services.MoveMaterialCommand{
+	return h.inventoryService.MoveMaterial(ctx, services.MoveMaterialParams{
 		FromSlotID: cmd.FromSlotID,
 		ToSlotID:   cmd.ToSlotID,
 		OperatorID: cmd.OperatorID,

@@ -2,7 +2,7 @@ package repositories
 
 import (
     "context"
-    "inventory-service/internal/domain/entities"
+    "WMS/services/inventory-service/internal/domain/entities"
 )
 
 type AlertRepository interface {

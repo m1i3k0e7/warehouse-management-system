@@ -2,10 +2,11 @@ package repositories
 
 import (
 	"context"
-	"inventory-service/internal/domain/entities"
-	"inventory-service/internal/domain/repositories"
+	"WMS/services/inventory-service/internal/domain/entities"
+	"WMS/services/inventory-service/internal/domain/repositories"
 
 	"gorm.io/gorm"
+	"time"
 )
 
 type operationRepository struct {
@@ -70,6 +71,30 @@ func (r *operationRepository) GetTimedOutPendingPhysicalConfirmations(ctx contex
 	var operations []*entities.Operation
 	err := r.db.WithContext(ctx).
 		Where("status = ? AND timestamp < ?", entities.OperationStatusPendingPhysicalConfirmation, time.Now().Add(-timeout)).
+		Find(&operations).Error
+	return operations, err
+}
+
+func (r *operationRepository) BeginTx(ctx context.Context) (*gorm.DB, error) {
+	return r.db.WithContext(ctx).Begin(), nil
+}
+
+func (r *operationRepository) UpdateWithTx(ctx context.Context, tx *gorm.DB, operation *entities.Operation) error {
+	return tx.WithContext(ctx).Save(operation).Error
+}
+
+func (r *operationRepository) GetPendingPhysicalConfirmationsBySlotID(ctx context.Context, slotID string) ([]*entities.Operation, error) {
+	var operations []*entities.Operation
+	err := r.db.WithContext(ctx).
+		Where("slot_id = ? AND status = ?", slotID, entities.OperationStatusPendingPhysicalConfirmation).
+		Find(&operations).Error
+	return operations, err
+}
+
+func (r *operationRepository) GetPendingRemovalConfirmationsBySlotID(ctx context.Context, slotID string) ([]*entities.Operation, error) {
+	var operations []*entities.Operation
+	err := r.db.WithContext(ctx).
+		Where("slot_id = ? AND status = ?", slotID, entities.OperationStatusPendingRemovalConfirmation).
 		Find(&operations).Error
 	return operations, err
 }

@@ -8,6 +8,7 @@ const PHYSICAL_PLACEMENT_EVENTS = {
   PHYSICAL_PLACEMENT_REQUESTED: 'physical.placement.requested',
   PHYSICAL_PLACEMENT_CONFIRMED: 'physical.placement.confirmed',
   PHYSICAL_PLACEMENT_FAILED: 'physical.placement.failed',
+  PHYSICAL_PLACEMENT_UNPLANNED: 'physical.placement.unplanned',
 };
 
 const SHELF_EVENTS = {

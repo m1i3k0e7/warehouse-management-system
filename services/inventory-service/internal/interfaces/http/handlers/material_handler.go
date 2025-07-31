@@ -5,8 +5,8 @@ import (
 	"strconv"
 
 	"github.com/gin-gonic/gin"
-	"warehouse/internal/application/commands"
-	"warehouse/internal/application/queries"
+	"WMS/services/inventory-service/internal/application/commands"
+	"WMS/services/inventory-service/internal/application/queries"
 )
 
 // MaterialHandler handles HTTP requests related to materials.

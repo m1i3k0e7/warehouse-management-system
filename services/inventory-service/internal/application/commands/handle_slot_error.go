@@ -2,7 +2,7 @@ package commands
 
 import (
 	"context"
-	"warehouse/internal/domain/services"
+	"WMS/services/inventory-service/internal/domain/services"
 )
 
 type HandleSlotErrorCommand struct {
