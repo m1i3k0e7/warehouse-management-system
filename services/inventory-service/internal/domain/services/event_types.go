@@ -6,6 +6,9 @@ const (
 	EventTypeMaterialRemoved = "material.removed"
 	EventTypeMaterialMoved = "material.moved"
 
+	// Slot Events
+	EventTypeMaterialReserved = "material.reserved"
+
 	// Physical Placement Events
 	EventTypeMaterialDetected = "material.detected" // Raw event from physical sensor
 	EventTypeUnplannedPlacement = "unplanned.placement" // Event for detected but unplanned placement

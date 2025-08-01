@@ -53,6 +53,7 @@ type InventoryService struct {
 	cacheService    *CacheService
 	auditService    *AuditService
 	alertService    *AlertService
+	retryService 	*RetryService
 	failedEventRepo repositories.FailedEventRepository
 }
 
@@ -67,6 +68,7 @@ func NewInventoryService(
 	cacheService *CacheService,
 	auditService *AuditService,
 	alertService *AlertService,
+	retryService *RetryService,
 	failedEventRepo repositories.FailedEventRepository,
 ) *InventoryService {
 	return &InventoryService{
@@ -79,18 +81,19 @@ func NewInventoryService(
 		cacheService:    cacheService,
 		auditService:    auditService,
 		alertService:    alertService,
+		retryService: 	 retryService,
 		failedEventRepo: failedEventRepo,
 	}
 }
 
-func (s *InventoryService) PlaceMaterial(ctx context.Context, params PlaceMaterialParams) error {
+func (s *InventoryService) PlaceMaterial(ctx context.Context, param PlaceMaterialParams) error {
 	// validate command parameters
-	if err := s.validatePlaceMaterialParams(params); err != nil {
+	if err := s.validatePlaceMaterialParams(param); err != nil {
 		return errors.NewValidationError("invalid command", err)
 	}
 
 	// acquire lock on the shelf
-	slot, err := s.slotRepo.GetByID(ctx, params.SlotID)
+	slot, err := s.slotRepo.GetByID(ctx, param.SlotID)
 	if err != nil {
 		return errors.NewNotFoundError("slot not found", err)
 	}
@@ -103,15 +106,15 @@ func (s *InventoryService) PlaceMaterial(ctx context.Context, params PlaceMateri
 	defer unlock()
 
 	// validate preconditions for placing material
-	if err := s.validatePlacementPreconditions(ctx, params); err != nil {
+	if err := s.validatePlacementPreconditions(ctx, param); err != nil {
 		return err
 	}
 
 	// execute the placement operation
-	operation, err := s.executePlaceMaterial(ctx, params)
-	if err != nil {
+	if err := s.retryService.ExecuteWithRetry(ctx, s.executePlaceMaterial, param, entities.OperationTypeMove); err != nil {
 		// log the failed operation
-		s.auditService.LogFailedOperation(ctx, "place_material", params, err)
+		s.auditService.LogFailedOperation(ctx, "place_material", param, err)
+		s.SaveFailedEventToDLQ(ctx, EventTypeMaterialPlaced, EventTypeMaterialPlaced, param, err)
 		return err
 	}
 
@@ -119,7 +122,7 @@ func (s *InventoryService) PlaceMaterial(ctx context.Context, params PlaceMateri
 	// s.checkForAnomalies(ctx, operation, params.SensorData)
 
 	// log the successful operation
-	s.auditService.LogSuccessfulOperation(ctx, operation)
+	// s.auditService.LogSuccessfulOperation(ctx, operation)
 
 	return nil
 }
@@ -141,7 +144,14 @@ func (s *InventoryService) RemoveMaterial(ctx context.Context, param RemoveMater
 	}
 	defer unlock()
 
-	return s.executeRemoveMaterial(ctx, param, slot)
+	if err := s.retryService.ExecuteWithRetry(ctx, s.executeRemoveMaterial, param, entities.OperationTypeMove); err != nil {
+		// log the failed operation
+		s.auditService.LogFailedOperation(ctx, "remove_material", param, err)
+		s.SaveFailedEventToDLQ(ctx, EventTypeMaterialRemoved, EventTypeMaterialRemoved, param, err)
+		return err
+	}
+
+	return nil
 }
 
 func (s *InventoryService) MoveMaterial(ctx context.Context, params MoveMaterialParams) error {
@@ -168,7 +178,14 @@ func (s *InventoryService) MoveMaterial(ctx context.Context, params MoveMaterial
 	locks := s.acquireMultipleShelfLocks(ctx, []string{fromSlot.ShelfID, toSlot.ShelfID})
 	defer s.releaseMultipleLocks(locks)
 
-	return s.executeMoveMaterial(ctx, params, fromSlot, toSlot)
+	if err := s.retryService.ExecuteWithRetry(ctx, s.executeMoveMaterial, params, entities.OperationTypeMove); err != nil {
+		// log the failed operation
+		s.auditService.LogFailedOperation(ctx, "move_material", params, err)
+		s.SaveFailedEventToDLQ(ctx, EventTypeMaterialMoved, EventTypeMaterialMoved, params, err)
+		return err
+	}
+
+	return nil
 }
 
 func (s *InventoryService) ReserveSlots(ctx context.Context, param ReserveSlotsParams) error {
@@ -198,7 +215,14 @@ func (s *InventoryService) ReserveSlots(ctx context.Context, param ReserveSlotsP
 	locks := s.acquireMultipleShelfLocks(ctx, shelfIDs)
 	defer s.releaseMultipleLocks(locks)
 
-	return s.executeReserveSlots(ctx, param, slotShelfMap)
+	if err := s.retryService.ExecuteWithRetry(ctx, s.executeReserveSlots, param, slotShelfMap); err != nil {
+		// log the failed operation
+		s.auditService.LogFailedOperation(ctx, "reserve_slots", param, err)
+		s.SaveFailedEventToDLQ(ctx, EventTypeSlotsReserved, EventTypeSlotsReserved, param, err)
+		return err
+	}
+
+	return nil
 }
 
 func (s *InventoryService) FindOptimalSlot(ctx context.Context, materialType string, shelfID string) (*entities.Slot, error) {
@@ -382,10 +406,10 @@ func (s *InventoryService) validatePlacementPreconditions(ctx context.Context, p
 	return nil
 }
 
-func (s *InventoryService) executePlaceMaterial(ctx context.Context, params PlaceMaterialParams) (*entities.Operation, error) {
+func (s *InventoryService) executePlaceMaterial(ctx context.Context, params PlaceMaterialParams) error {
 	tx, err := s.slotRepo.BeginTx(ctx)
 	if err != nil {
-		return nil, errors.NewInternalError("failed to start transaction", err)
+		return errors.NewInternalError("failed to start transaction", err)
 	}
 	defer func() {
 		if err != nil {
@@ -400,13 +424,13 @@ func (s *InventoryService) executePlaceMaterial(ctx context.Context, params Plac
 	slot.UpdatedAt = time.Now()
 	slot.Version++
 	if err := s.slotRepo.UpdateWithTx(ctx, tx, slot); err != nil {
-		return nil, errors.NewConflictError("failed to update slot", err)
+		return errors.NewConflictError("failed to update slot", err)
 	}
 
 	material.Status = entities.MaterialStatusInUse
 	material.UpdatedAt = time.Now()
 	if err := s.materialRepo.UpdateWithTx(ctx, tx, material); err != nil {
-		return nil, errors.NewInternalError("failed to update material", err)
+		return errors.NewInternalError("failed to update material", err)
 	}
 
 	operation := &entities.Operation{
@@ -420,19 +444,19 @@ func (s *InventoryService) executePlaceMaterial(ctx context.Context, params Plac
 		Status:     entities.OperationStatusPendingPhysicalConfirmation,
 	}
 	if err := s.operationRepo.CreateWithTx(ctx, tx, operation); err != nil {
-		return nil, errors.NewInternalError("failed to record operation", err)
+		return errors.NewInternalError("failed to record operation", err)
 	}
 
 	if err := tx.Commit(); err != nil {
-		return nil, errors.NewInternalError("failed to commit transaction", err.Error)
+		return errors.NewInternalError("failed to commit transaction", err.Error)
 	}
 
 	// Publish event to request physical placement
 	s.publishPhysicalPlacementRequestedEvent(ctx, operation)
-	return operation, nil
+	return nil
 }
 
-func (s *InventoryService) executeRemoveMaterial(ctx context.Context, params RemoveMaterialParams, slot *entities.Slot) error {
+func (s *InventoryService) executeRemoveMaterial(ctx context.Context, param RemoveMaterialParams) error {
 	tx, err := s.slotRepo.BeginTx(ctx)
 	if err != nil {
 		return errors.NewInternalError("failed to start transaction", err)
@@ -442,6 +466,11 @@ func (s *InventoryService) executeRemoveMaterial(ctx context.Context, params Rem
 			tx.Rollback()
 		}
 	}()
+
+	slot, err := s.slotRepo.GetByID(ctx, param.SlotID)
+	if err != nil {
+		return errors.NewNotFoundError("slot not found", err)
+	}
 
 	material, err := s.materialRepo.GetByID(ctx, *slot.MaterialID)
 	if err != nil {
@@ -459,8 +488,8 @@ func (s *InventoryService) executeRemoveMaterial(ctx context.Context, params Rem
 		ID:         generateUUID(),
 		Type:       entities.OperationTypeRemoval,
 		MaterialID: material.ID,
-		SlotID:     params.SlotID,
-		OperatorID: params.OperatorID,
+		SlotID:     param.SlotID,
+		OperatorID: param.OperatorID,
 		ShelfID:    slot.ShelfID,
 		Timestamp:  time.Now(),
 		// Status:     entities.OperationStatusCompleted,
@@ -479,7 +508,7 @@ func (s *InventoryService) executeRemoveMaterial(ctx context.Context, params Rem
 	return nil
 }
 
-func (s *InventoryService) executeMoveMaterial(ctx context.Context, param MoveMaterialParams, fromSlot, toSlot *entities.Slot) error {
+func (s *InventoryService) executeMoveMaterial(ctx context.Context, param MoveMaterialParams) error {
 	tx, err := s.slotRepo.BeginTx(ctx)
 	if err != nil {
 		return errors.NewInternalError("failed to start transaction", err)
@@ -489,6 +518,16 @@ func (s *InventoryService) executeMoveMaterial(ctx context.Context, param MoveMa
 			tx.Rollback()
 		}
 	}()
+
+	fromSlot, err := s.slotRepo.GetByID(ctx, param.FromSlotID)
+	if err != nil {
+		return errors.NewNotFoundError("source slot not found", err)
+	}
+
+	toSlot, err := s.slotRepo.GetByID(ctx, param.ToSlotID)
+	if err != nil {
+		return errors.NewNotFoundError("target slot not found", err)
+	}
 
 	material, err := s.materialRepo.GetByID(ctx, *fromSlot.MaterialID)
 	if err != nil {
@@ -605,7 +644,7 @@ func (s *InventoryService) executeBatchPlacement(ctx context.Context, params []P
 	}()
 	
 	for _, p := range params {
-		_, err := s.executePlaceMaterial(ctx, p)
+		err := s.retryService.ExecuteWithRetry(ctx, s.executePlaceMaterial, p, entities.OperationTypeMove)
 		if err != nil {
 			return err // Or collect errors and return them all
 		}
@@ -734,9 +773,8 @@ func (s *InventoryService) ConfirmPhysicalPlacement(ctx context.Context, operati
 		return errors.NewInternalError("failed to commit transaction", err.Error)
 	}
 
-	// Publish material placed event (now that physical placement is confirmed)
-	s.publishMaterialPlacedEvent(ctx, operation)
-	// s.publishPhysicalPlacementConfirmedEvent(ctx, operation) // This event is now handled by material.placed
+	// Publish material placed confirmed event (now that physical placement is confirmed)
+	s.publishPhysicalPlacementConfirmedEvent(ctx, operation)
 
 	return nil
 }
@@ -793,7 +831,7 @@ func (s *InventoryService) ConfirmPhysicalRemoval(ctx context.Context, operation
 		return errors.NewInternalError("failed to commit transaction", err.Error)
 	}
 
-	s.publishMaterialRemovedEvent(ctx, operation)
+	s.publishPhysicalRemovalConfirmedEvent(ctx, operation)
 	
 	return nil
 }
@@ -880,6 +918,27 @@ func (s *InventoryService) HandlePhysicalRemovalTimeout(ctx context.Context, ope
 		}
 	}()
 
+	slot, err := s.slotRepo.GetByID(ctx, operation.SlotID)
+	if err != nil {
+		return errors.NewNotFoundError("slot not found for rollback", err)
+	}
+	slot.Status = entities.SlotStatusOccupied // Rollback to occupied status
+	slot.UpdatedAt = time.Now()
+	slot.Version++
+	if err := s.slotRepo.UpdateWithTx(ctx, tx, slot); err != nil {
+		return errors.NewInternalError("failed to rollback slot status", err)
+	}
+
+	// Update operation status to failed
+	operation.Status = entities.OperationStatusFailed
+	operation.Timestamp = time.Now()
+	if err := s.operationRepo.UpdateWithTx(ctx, tx, operation); err != nil {
+		return errors.NewInternalError("failed to update operation status to failed", err)
+	}
+
+	// Publish physical removal failed event
+	s.publishPhysicalRemovalFailedEvent(ctx, operation)
+
 	return nil
 }
 
@@ -924,6 +983,6 @@ func (s *InventoryService) HandleMaterialRemovedEvent(ctx context.Context, slotI
 
 	logger.Info(fmt.Sprintf("Unplanned removal detected in slot %s with barcode %s. Triggering alert.", slotID, materialBarcode))
 	s.publishUnplannedRemovalEvent(ctx, slotID, materialBarcode)
-	
+
 	return s.ConfirmPhysicalRemoval(ctx, slotID, true)
 }

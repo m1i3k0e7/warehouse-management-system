@@ -8,6 +8,19 @@ import (
 	"WMS/services/inventory-service/pkg/utils/logger"
 )
 
+func (s *InventoryService) SaveFailedEventToDLQ(ctx context.Context, topic, eventType string, event any, originalErr error) {
+	// save the failed event to the dead-letter queue (DLQ)
+	failedEvent, err := entities.NewFailedEvent(generateUUID(), topic, eventType, event, originalErr)
+	if err != nil {
+		logger.Error("Failed to create failed event", err)
+		return
+	}
+
+	if err := s.failedEventRepo.Create(ctx, failedEvent); err != nil {
+		logger.Error("Failed to save failed event to DLQ", err)
+	}
+}
+
 func (s *InventoryService) publishShelfStatusChangedEvent(ctx context.Context, shelfID string, oldStatus, newStatus string) {
 	event := struct {
 		EventID   string    `json:"event_id"`
@@ -25,20 +38,7 @@ func (s *InventoryService) publishShelfStatusChangedEvent(ctx context.Context, s
 
 	if err := s.eventService.PublishEvent(ctx, EventTypeShelfStatusChanged, event); err != nil {
 		logger.Error("Failed to publish shelf status changed event", err)
-		s.scheduleEventRetry(ctx, EventTypeShelfStatusChanged, EventTypeShelfStatusChanged, event, err)
-	}
-}
-
-func (s *InventoryService) scheduleEventRetry(ctx context.Context, topic, eventType string, event interface{}, originalErr error) {
-	// save the failed event to the dead-letter queue (DLQ)
-	failedEvent, err := entities.NewFailedEvent(generateUUID(), topic, eventType, event, originalErr)
-	if err != nil {
-		logger.Error("Failed to create failed event", err)
-		return
-	}
-
-	if err := s.failedEventRepo.Create(ctx, failedEvent); err != nil {
-		logger.Error("Failed to save failed event to DLQ", err)
+		s.SaveFailedEventToDLQ(ctx, EventTypeShelfStatusChanged, EventTypeShelfStatusChanged, event, err)
 	}
 }
 
@@ -63,7 +63,7 @@ func (s *InventoryService) publishPhysicalPlacementRequestedEvent(ctx context.Co
 
 	if err := s.eventService.PublishEvent(ctx, EventTypePhysicalPlacementRequested, event); err != nil {
 		logger.Error("Failed to publish physical placement requested event", err)
-		s.scheduleEventRetry(ctx, EventTypePhysicalPlacementRequested, EventTypePhysicalPlacementRequested, event, err)
+		s.SaveFailedEventToDLQ(ctx, EventTypePhysicalPlacementRequested, EventTypePhysicalPlacementRequested, event, err)
 	}
 }
 
@@ -88,7 +88,7 @@ func (s *InventoryService) publishPhysicalPlacementConfirmedEvent(ctx context.Co
 
 	if err := s.eventService.PublishEvent(ctx, EventTypePhysicalPlacementConfirmed, event); err != nil {
 		logger.Error("Failed to publish physical placement confirmed event", err)
-		s.scheduleEventRetry(ctx, EventTypePhysicalPlacementConfirmed, EventTypePhysicalPlacementConfirmed, event, err)
+		s.SaveFailedEventToDLQ(ctx, EventTypePhysicalPlacementConfirmed, EventTypePhysicalPlacementConfirmed, event, err)
 	}
 }
 
@@ -113,13 +113,13 @@ func (s *InventoryService) publishPhysicalPlacementFailedEvent(ctx context.Conte
 
 	if err := s.eventService.PublishEvent(ctx, EventTypePhysicalPlacementFailed, event); err != nil {
 		logger.Error("Failed to publish physical placement failed event", err)
-		s.scheduleEventRetry(ctx, EventTypePhysicalPlacementFailed, EventTypePhysicalPlacementFailed, event, err)
+		s.SaveFailedEventToDLQ(ctx, EventTypePhysicalPlacementFailed, EventTypePhysicalPlacementFailed, event, err)
 	}
 }
 
 func (s *InventoryService) publishPhysicalRemovalConfirmedEvent(ctx context.Context, operation *entities.Operation) {}
 
-func (s *InventoryService) publishPhysicalRemovalFaileddEvent(ctx context.Context, operation *entities.Operation) {}
+func (s *InventoryService) publishPhysicalRemovalFailedEvent(ctx context.Context, operation *entities.Operation) {}
 
 func (s *InventoryService) publishUnplannedPlacementEvent(ctx context.Context, slotID, materialBarcode string) {
 	event := struct {
@@ -136,7 +136,7 @@ func (s *InventoryService) publishUnplannedPlacementEvent(ctx context.Context, s
 
 	if err := s.eventService.PublishEvent(ctx, EventTypeUnplannedPlacement, event); err != nil {
 		logger.Error("Failed to publish unplanned placement event", err)
-		s.scheduleEventRetry(ctx, EventTypeUnplannedPlacement, EventTypeUnplannedPlacement, event, err)
+		s.SaveFailedEventToDLQ(ctx, EventTypeUnplannedPlacement, EventTypeUnplannedPlacement, event, err)
 	}
 }
 
@@ -155,7 +155,7 @@ func (s *InventoryService) publishUnplannedRemovalEvent(ctx context.Context, slo
 
 	if err := s.eventService.PublishEvent(ctx, EventTypeUnplannedRemoval, event); err != nil {
 		logger.Error("Failed to publish unplanned removal event", err)
-		s.scheduleEventRetry(ctx, EventTypeUnplannedRemoval, EventTypeUnplannedRemoval, event, err)
+		s.SaveFailedEventToDLQ(ctx, EventTypeUnplannedRemoval, EventTypeUnplannedRemoval, event, err)
 	}
 }
 
@@ -180,7 +180,7 @@ func (s *InventoryService) publishMaterialPlacedEvent(ctx context.Context, opera
 
 	if err := s.eventService.PublishEvent(ctx, EventTypeMaterialPlaced, event); err != nil {
 		logger.Error("Failed to publish material placed event", err)
-		s.scheduleEventRetry(ctx, EventTypeMaterialPlaced, EventTypeMaterialPlaced, event, err)
+		s.SaveFailedEventToDLQ(ctx, EventTypeMaterialPlaced, EventTypeMaterialPlaced, event, err)
 	}
 }
 
@@ -205,7 +205,7 @@ func (s *InventoryService) publishMaterialRemovedEvent(ctx context.Context, oper
 
 	if err := s.eventService.PublishEvent(ctx, EventTypeMaterialRemoved, event); err != nil {
 		logger.Error("Failed to publish material removed event", err)
-		s.scheduleEventRetry(ctx, EventTypeMaterialRemoved, EventTypeMaterialRemoved, event, err)
+		s.SaveFailedEventToDLQ(ctx, EventTypeMaterialRemoved, EventTypeMaterialRemoved, event, err)
 	}
 }
 
@@ -232,6 +232,6 @@ func (s *InventoryService) publishMaterialMovedEvent(ctx context.Context, operat
 
 	if err := s.eventService.PublishEvent(ctx, EventTypeMaterialMoved, event); err != nil {
 		logger.Error("Failed to publish material moved event", err)
-		s.scheduleEventRetry(ctx, EventTypeMaterialMoved, EventTypeMaterialMoved, event, err)
+		s.SaveFailedEventToDLQ(ctx, EventTypeMaterialMoved, EventTypeMaterialMoved, event, err)
 	}
 }

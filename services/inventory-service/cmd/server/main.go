@@ -52,7 +52,7 @@ func main() {
 	// Initialize all other services
 	lockService := services.NewLockService(redisClient)
 	cacheService := services.NewCacheService(redisClient)
-	retryService := services.NewRetryService(cfg.ServiceConfig.RetryCount, cfg.ServiceConfig.RetryDelay)
+	retryService := services.NewRetryService(cfg.Service.RetryCount, cfg.Service.RetryDelay, nil)
 	auditService := services.NewAuditService(eventService)
 	alertService := services.NewAlertService(eventService)
 
@@ -74,6 +74,7 @@ func main() {
 		cacheService,
 		auditService,
 		alertService,
+		retryService,
 		failedEventRepo,
 	)
 
