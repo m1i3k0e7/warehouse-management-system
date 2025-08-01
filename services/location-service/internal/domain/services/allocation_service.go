@@ -2,42 +2,38 @@ package services
 
 import (
 	"context"
-	"fmt"
 
-	"warehouse/location-service/internal/domain/entities"
-	"warehouse/location-service/internal/domain/repositories"
+	"github.com/your-repo/wms/location-service/internal/domain/entities"
+	"github.com/your-repo/wms/location-service/internal/domain/repositories"
 )
 
-type AllocationService struct {
-	shelfRepo repositories.ShelfRepository
-	// Add other dependencies like cache, etc.
+// AllocationService provides logic for allocating slots for materials.
+	ype AllocationService struct {
+	layoutRepo repositories.LayoutRepository
 }
 
-func NewAllocationService(shelfRepo repositories.ShelfRepository) *AllocationService {
-	return &AllocationService{
-		shelfRepo: shelfRepo,
-	}
+// NewAllocationService creates a new AllocationService.
+func NewAllocationService(layoutRepo repositories.LayoutRepository) *AllocationService {
+	return &AllocationService{layoutRepo: layoutRepo}
 }
 
-// AllocateSlot finds an optimal slot for a given material type and zone.
-// This is a simplified example; real-world allocation would be much more complex.
-func (s *AllocationService) AllocateSlot(ctx context.Context, materialType, zone string) (*entities.Slot, error) {
-	// For simplicity, let's just find the first empty slot in any shelf within the zone
-	// In a real system, this would involve complex algorithms (e.g., ABC analysis, FIFO, LIFO)
+// SuggestSlot finds and suggests a suitable slot for a given material type.
+func (s *AllocationService) SuggestSlot(ctx context.Context, materialType, zoneID string) (*entities.Shelf, *entities.Slot, error) {
+	// This is a simple first-fit algorithm. More complex logic can be added later.
+	// e.g., based on material type, historical data, or proximity to other materials.
 
-	shelves, err := s.shelfRepo.GetShelvesByZone(ctx, zone)
+	shelves, err := s.layoutRepo.FindAllShelvesInZone(ctx, zoneID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get shelves by zone: %w", err)
+		return nil, nil, err
 	}
 
 	for _, shelf := range shelves {
 		for _, slot := range shelf.Slots {
-			if slot.Status == "empty" { // Assuming "empty" status
-				// Further checks for material type compatibility, capacity, etc. would go here
-				return &slot, nil
+			if slot.Status == entities.StatusEmpty {
+				return shelf, &slot, nil
 			}
 		}
 	}
 
-	return nil, fmt.Errorf("no empty slot found in zone %s for material type %s", zone, materialType)
+	return nil, nil, nil // No available slot found
 }

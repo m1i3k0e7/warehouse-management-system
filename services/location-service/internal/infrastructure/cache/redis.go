@@ -2,38 +2,44 @@ package cache
 
 import (
 	"context"
-	"fmt"
-	"log"
 	"time"
 
 	"github.com/go-redis/redis/v8"
 )
 
-type RedisClient struct {
-	Client *redis.Client
+// RedisCache is a Redis-backed cache.
+	ype RedisCache struct {
+	client *redis.Client
 }
 
-func NewRedisClient(addr, password string, db int) (*RedisClient, error) {
-	rdb := redis.NewClient(&redis.Options{
-		Addr:     addr,
-		Password: password,
-		DB:       db,
+// NewRedisCache creates a new RedisCache.
+func NewRedisCache(addr string) (*RedisCache, error) {
+	client := redis.NewClient(&redis.Options{
+		Addr: addr,
 	})
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	_, err := rdb.Ping(ctx).Result()
-	if err != nil {
-		return nil, fmt.Errorf("failed to connect to Redis: %w", err)
+	if err := client.Ping(context.Background()).Err(); err != nil {
+		return nil, err
 	}
 
-	log.Println("Connected to Redis!")
-	return &RedisClient{Client: rdb},
-	nil
+	return &RedisCache{client: client}, nil
 }
 
-func (r *RedisClient) Close() error {
-	log.Println("Closing Redis connection...")
-	return r.Client.Close()
+// Get retrieves an item from the cache.
+func (c *RedisCache) Get(ctx context.Context, key string) (string, error) {
+	val, err := c.client.Get(ctx, key).Result()
+	if err == redis.Nil {
+		return "", nil // Cache miss
+	}
+	return val, err
+}
+
+// Set adds an item to the cache.
+func (c *RedisCache) Set(ctx context.Context, key string, value interface{}, expiration time.Duration) error {
+	return c.client.Set(ctx, key, value, expiration).Err()
+}
+
+// Delete removes an item from the cache.
+func (c *RedisCache) Delete(ctx context.Context, key string) error {
+	return c.client.Del(ctx, key).Err()
 }

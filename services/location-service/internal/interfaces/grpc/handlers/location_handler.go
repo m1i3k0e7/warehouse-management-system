@@ -2,86 +2,89 @@ package handlers
 
 import (
 	"context"
-	"fmt"
 
-	"warehouse/location-service/api/proto"
-	"warehouse/location-service/internal/application/commands"
-	"warehouse/location-service/internal/application/queries"
-	"warehouse/location-service/internal/domain/entities"
+	pb "github.com/your-repo/wms/location-service/api/proto"
+	"github.com/your-repo/wms/location-service/internal/application/commands"
+	"github.com/your-repo/wms/location-service/internal/application/queries"
+	"github.com/your-repo/wms/location-service/internal/domain/entities"
+	"github.com/your-repo/wms/location-service/internal/domain/repositories"
+	"github.com/your-repo/wms/location-service/internal/domain/services"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
-type LocationHandler struct {
-	proto.UnimplementedLocationServiceServer
-	allocateSlotCmdHandler *commands.AllocateSlotCommandHandler
-	findOptimalPathQueryHandler *queries.FindOptimalPathQueryHandler
-	getShelfLayoutQueryHandler *queries.GetShelfLayoutQueryHandler
+// LocationServer is the implementation of the gRPC LocationService.
+	ype LocationServer struct {
+	pb.UnimplementedLocationServiceServer
+
+	// Repositories
+	shelfRepo  repositories.ShelfRepository
+	layoutRepo repositories.LayoutRepository
+
+	// Domain Services
+	pathfinder        *services.PathfindingService
+	allocationService *services.AllocationService
 }
 
-func NewLocationHandler(
-	allocateSlotCmdHandler *commands.AllocateSlotCommandHandler,
-	findOptimalPathQueryHandler *queries.FindOptimalPathQueryHandler,
-	getShelfLayoutQueryHandler *queries.GetShelfLayoutQueryHandler,
-) *LocationHandler {
-	return &LocationHandler{
-		allocateSlotCmdHandler: allocateSlotCmdHandler,
-		findOptimalPathQueryHandler: findOptimalPathQueryHandler,
-		getShelfLayoutQueryHandler: getShelfLayoutQueryHandler,
+// NewLocationServer creates a new LocationServer.
+func NewLocationServer(shelfRepo repositories.ShelfRepository, layoutRepo repositories.LayoutRepository) *LocationServer {
+	return &LocationServer{
+		shelfRepo:         shelfRepo,
+		layoutRepo:        layoutRepo,
+		pathfinder:        services.NewPathfindingService(),
+		allocationService: services.NewAllocationService(layoutRepo),
 	}
 }
 
-func (h *LocationHandler) GetShelfLayout(ctx context.Context, req *proto.GetShelfLayoutRequest) (*proto.GetShelfLayoutResponse, error) {
-	query := queries.GetShelfLayoutQuery{ShelfID: req.GetShelfId()}
-	shelf, err := h.getShelfLayoutQueryHandler.Handle(ctx, query)
+func (s *LocationServer) GetShelfLayout(ctx context.Context, req *pb.GetShelfLayoutRequest) (*pb.ShelfLayoutResponse, error) {
+	q := queries.NewGetShelfLayoutQueryHandler(s.shelfRepo)
+	shelf, err := q.Handle(ctx, req.ShelfId)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get shelf layout: %w", err)
+		return nil, status.Errorf(codes.Internal, "failed to get shelf layout: %v", err)
+	}
+	if shelf == nil {
+		return nil, status.Errorf(codes.NotFound, "shelf with id %s not found", req.ShelfId)
 	}
 
-	// Convert domain entity to protobuf message
-	protoShelf := &proto.Shelf{
-		Id:      shelf.ID,
-		Name:    shelf.Name,
-		Zone:    shelf.Zone,
-		Rows:    shelf.Rows,
-		Columns: shelf.Columns,
-		Levels:  shelf.Levels,
-	}
-	for _, slot := range shelf.Slots {
-		protoShelf.Slots = append(protoShelf.Slots, &proto.Slot{
-			Id:         slot.ID,
-			ShelfId:    slot.ShelfID,
-			Row:        slot.Row,
-			Column:     slot.Column,
-			Level:      slot.Level,
-			Status:     slot.Status,
-			MaterialId: slot.MaterialID,
-		})
-	}
-
-	return &proto.GetShelfLayoutResponse{Shelf: protoShelf}, nil
+	return &pb.ShelfLayoutResponse{Shelf: toProtoShelf(shelf)}, nil
 }
 
-func (h *LocationHandler) FindOptimalPath(ctx context.Context, req *proto.FindOptimalPathRequest) (*proto.FindOptimalPathResponse, error) {
-	query := queries.FindOptimalPathQuery{
-		StartSlotID: req.GetStartSlotId(),
-		EndSlotID:   req.GetEndSlotId(),
-	}
-	path, err := h.findOptimalPathQueryHandler.Handle(ctx, query)
+func (s *LocationServer) FindOptimalPath(ctx context.Context, req *pb.FindOptimalPathRequest) (*pb.FindOptimalPathResponse, error) {
+	q := queries.NewFindOptimalPathQueryHandler(s.pathfinder)
+	path, err := q.Handle(ctx, fromProtoPoint(req.StartPoint), fromProtoPoint(req.EndPoint))
 	if err != nil {
-		return nil, fmt.Errorf("failed to find optimal path: %w", err)
+		return nil, status.Errorf(codes.Internal, "failed to find optimal path: %v", err)
 	}
 
-	return &proto.FindOptimalPathResponse{PathSlotIds: path.PathNodes}, nil
+	return &pb.FindOptimalPathResponse{Path: toProtoPath(path.Points), Distance: path.Distance}, nil
 }
 
-func (h *LocationHandler) AllocateSlot(ctx context.Context, req *proto.AllocateSlotRequest) (*proto.AllocateSlotResponse, error) {
-	cmd := commands.AllocateSlotCommand{
-		MaterialType: req.GetMaterialType(),
-		Zone:         req.GetZone(),
-	}
-	slot, err := h.allocateSlotCmdHandler.Handle(ctx, cmd)
+func (s *LocationServer) SuggestPlacement(ctx context.Context, req *pb.SuggestPlacementRequest) (*pb.SuggestPlacementResponse, error) {
+	cmd := commands.NewAllocateSlotCommandHandler(s.allocationService, s.shelfRepo)
+	shelf, slot, err := cmd.Handle(ctx, req.MaterialType, req.ZoneId, "") // materialID is empty because we are just suggesting
 	if err != nil {
-		return nil, fmt.Errorf("failed to allocate slot: %w", err)
+		return nil, status.Errorf(codes.Internal, "failed to suggest placement: %v", err)
+	}
+	if shelf == nil || slot == nil {
+		return nil, status.Errorf(codes.NotFound, "no available slot found in zone %s", req.ZoneId)
 	}
 
-	return &proto.AllocateSlotResponse{SlotId: slot.ID}, nil
+	return &pb.SuggestPlacementResponse{ShelfId: shelf.ID, SlotId: slot.ID}, nil
+}
+
+// --- Converters ---
+
+func toProtoShelf(shelf *entities.Shelf) *pb.Shelf {
+	// ... implementation ...
+	return &pb.Shelf{}
+}
+
+func fromProtoPoint(p *pb.Point) entities.Point {
+	// ... implementation ...
+	return entities.Point{}
+}
+
+func toProtoPath(points []entities.Point) []*pb.Point {
+	// ... implementation ...
+	return []*pb.Point{}
 }

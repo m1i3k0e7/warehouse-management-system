@@ -2,56 +2,79 @@ syntax = "proto3";
 
 package location;
 
-option go_package = "github.com/your-repo/warehouse-management-system/location-service/api/proto";
+option go_package = "github.com/your-repo/wms/location-service/api/proto;proto";
 
+// LocationService provides functionalities for warehouse layout and pathfinding.
 service LocationService {
-  rpc GetShelfLayout(GetShelfLayoutRequest) returns (GetShelfLayoutResponse);
+  // Get the layout of a specific shelf
+  rpc GetShelfLayout(GetShelfLayoutRequest) returns (ShelfLayoutResponse);
+  
+  // Find the optimal path between two points in the warehouse
   rpc FindOptimalPath(FindOptimalPathRequest) returns (FindOptimalPathResponse);
-  rpc AllocateSlot(AllocateSlotRequest) returns (AllocateSlotResponse);
+
+  // Suggest a suitable slot for a new material
+  rpc SuggestPlacement(SuggestPlacementRequest) returns (SuggestPlacementResponse);
+
+  // --- Admin Endpoints ---
+  // Create or Update a Zone
+  rpc UpsertZone(Zone) returns (Zone);
+  // Create or Update a Shelf
+  rpc UpsertShelf(Shelf) returns (Shelf);
+}
+
+message Point {
+  int32 x = 1;
+  int32 y = 2;
+  int32 z = 3;
+}
+
+message Zone {
+  string id = 1;
+  string name = 2;
+  // A polygon defining the zone's boundaries
+  repeated Point boundary_points = 3;
+}
+
+message Slot {
+  string id = 1; // e.g., "A-01-01"
+  Point position = 2;
+  string status = 3; // "EMPTY", "OCCUPIED", "RESERVED"
+  string material_id = 4; // Foreign key to material in inventory-service
 }
 
 message Shelf {
   string id = 1;
-  string name = 2;
-  string zone = 3;
+  string zone_id = 2;
+  Point position = 3;
   int32 rows = 4;
   int32 columns = 5;
-  int32 levels = 6;
-  repeated Slot slots = 7;
-}
-
-message Slot {
-  string id = 1;
-  string shelf_id = 2;
-  int32 row = 3;
-  int32 column = 4;
-  int32 level = 5;
-  string status = 6;
-  string material_id = 7;
+  repeated Slot slots = 6;
 }
 
 message GetShelfLayoutRequest {
   string shelf_id = 1;
 }
 
-message GetShelfLayoutResponse {
+message ShelfLayoutResponse {
   Shelf shelf = 1;
 }
 
 message FindOptimalPathRequest {
-  string start_slot_id = 1;
-  string end_slot_id = 2;
+  Point start_point = 1;
+  Point end_point = 2;
 }
 
 message FindOptimalPathResponse {
-  repeated string path_slot_ids = 1;
+  repeated Point path = 1;
+  double distance = 2;
 }
 
-message AllocateSlotRequest {
-  string material_type = 1;
-  string zone = 2;
+message SuggestPlacementRequest {
+  string material_type = 1; // e.g., "CPU", "Memory"
+  string zone_id = 2; // Optional: suggest placement within a specific zone
 }
 
-message AllocateSlotResponse {
-  string slot_id = 1;
+message SuggestPlacementResponse {
+  string shelf_id = 1;
+  string slot_id = 2;
 }

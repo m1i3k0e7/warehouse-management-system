@@ -1,47 +1,44 @@
 package grpc
 
 import (
-	"fmt"
 	"log"
 	"net"
 
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/reflection"
 
-	"warehouse/location-service/api/proto"
-	"warehouse/location-service/internal/interfaces/grpc/handlers"
+	pb "github.com/your-repo/wms/location-service/api/proto"
+	"github.com/your-repo/wms/location-service/internal/interfaces/grpc/handlers"
 )
 
-type Server struct {
+// Server is a gRPC server.
+	type Server struct {
 	grpcServer *grpc.Server
-	port       string
+	listener   net.Listener
 }
 
-func NewServer(port string, locationHandler *handlers.LocationHandler) *Server {
-	grpcServer := grpc.NewServer()
-	proto.RegisterLocationServiceServer(grpcServer, locationHandler)
-	reflection.Register(grpcServer) // Enable gRPC reflection for tools like grpcurl
+// NewServer creates a new gRPC server.
+func NewServer(port string, locationServer *handlers.LocationServer) *Server {
+	lis, err := net.Listen("tcp", port)
+	if err != nil {
+		log.Fatalf("failed to listen: %v", err)
+	}
+
+	s := grpc.NewServer()
+	pb.RegisterLocationServiceServer(s, locationServer)
 
 	return &Server{
-		grpcServer: grpcServer,
-		port:       port,
+		grpcServer: s,
+		listener:   lis,
 	}
 }
 
+// Start starts the gRPC server.
 func (s *Server) Start() error {
-	lis, err := net.Listen("tcp", fmt.Sprintf(":%s", s.port))
-	if err != nil {
-		return fmt.Errorf("failed to listen: %v", err)
-	}
-
-	log.Printf("gRPC server listening on port %s", s.port)
-	if err := s.grpcServer.Serve(lis); err != nil {
-		return fmt.Errorf("failed to serve: %v", err)
-	}
-	return nil
+	log.Printf("gRPC server listening on %s", s.listener.Addr())
+	return s.grpcServer.Serve(s.listener)
 }
 
+// Stop stops the gRPC server.
 func (s *Server) Stop() {
-	log.Println("Stopping gRPC server...")
 	s.grpcServer.GracefulStop()
 }

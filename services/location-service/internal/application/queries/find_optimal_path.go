@@ -2,31 +2,22 @@ package queries
 
 import (
 	"context"
-	"fmt"
 
-	"warehouse/location-service/internal/domain/entities"
-	"warehouse/location-service/internal/domain/services"
+	"github.com/your-repo/wms/location-service/internal/domain/entities"
+	"github.com/your-repo/wms/location-service/internal/domain/services"
 )
 
-type FindOptimalPathQuery struct {
-	StartSlotID string `json:"start_slot_id"`
-	EndSlotID   string `json:"end_slot_id"`
+// FindOptimalPathQueryHandler handles the FindOptimalPath query.
+	ype FindOptimalPathQueryHandler struct {
+	pathfinder *services.PathfindingService
 }
 
-type FindOptimalPathQueryHandler struct {
-	pathfindingService *services.PathfindingService
+// NewFindOptimalPathQueryHandler creates a new FindOptimalPathQueryHandler.
+func NewFindOptimalPathQueryHandler(pathfinder *services.PathfindingService) *FindOptimalPathQueryHandler {
+	return &FindOptimalPathQueryHandler{pathfinder: pathfinder}
 }
 
-func NewFindOptimalPathQueryHandler(pathfindingService *services.PathfindingService) *FindOptimalPathQueryHandler {
-	return &FindOptimalPathQueryHandler{
-		pathfindingService: pathfindingService,
-	}
-}
-
-func (h *FindOptimalPathQueryHandler) Handle(ctx context.Context, query FindOptimalPathQuery) (*entities.Path, error) {
-	path, err := h.pathfindingService.FindOptimalPath(ctx, query.tStartSlotID, query.EndSlotID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to find optimal path: %w", err)
-	}
-	return path, nil
+// Handle executes the query.
+func (h *FindOptimalPathQueryHandler) Handle(ctx context.Context, start, end entities.Point) (*entities.Path, error) {
+	return h.pathfinder.FindOptimalPath(start, end)
 }

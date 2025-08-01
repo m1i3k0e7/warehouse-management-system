@@ -2,31 +2,43 @@ package commands
 
 import (
 	"context"
-	"fmt"
 
-	"warehouse/location-service/internal/domain/entities"
-	"warehouse/location-service/internal/domain/services"
+	"github.com/your-repo/wms/location-service/internal/domain/entities"
+	"github.com/your-repo/wms/location-service/internal/domain/repositories"
+	"github.com/your-repo/wms/location-service/internal/domain/services"
 )
 
-type AllocateSlotCommand struct {
-	MaterialType string `json:"material_type"`
-	Zone         string `json:"zone"`
-}
-
-type AllocateSlotCommandHandler struct {
+// AllocateSlotCommandHandler handles the AllocateSlot command.
+	ype AllocateSlotCommandHandler struct {
 	allocationService *services.AllocationService
+	shelfRepo         repositories.ShelfRepository
 }
 
-func NewAllocateSlotCommandHandler(allocationService *services.AllocationService) *AllocateSlotCommandHandler {
+// NewAllocateSlotCommandHandler creates a new AllocateSlotCommandHandler.
+func NewAllocateSlotCommandHandler(allocationService *services.AllocationService, shelfRepo repositories.ShelfRepository) *AllocateSlotCommandHandler {
 	return &AllocateSlotCommandHandler{
 		allocationService: allocationService,
+		shelfRepo:         shelfRepo,
 	}
 }
 
-func (h *AllocateSlotCommandHandler) Handle(ctx context.Context, cmd AllocateSlotCommand) (*entities.Slot, error) {
-	slot, err := h.allocationService.AllocateSlot(ctx, cmd.MaterialType, cmd.Zone)
+// Handle executes the command.
+func (h *AllocateSlotCommandHandler) Handle(ctx context.Context, materialType, zoneID, materialID string) (*entities.Shelf, *entities.Slot, error) {
+	shelf, slot, err := h.allocationService.SuggestSlot(ctx, materialType, zoneID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to allocate slot: %w", err)
+		return nil, nil, err
 	}
-	return slot, nil
+	if shelf == nil || slot == nil {
+		return nil, nil, nil // No slot found
+	}
+
+	err = h.shelfRepo.UpdateSlotStatus(ctx, shelf.ID, slot.ID, entities.StatusReserved, materialID)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	slot.Status = entities.StatusReserved
+	slot.MaterialID = materialID
+
+	return shelf, slot, nil
 }
