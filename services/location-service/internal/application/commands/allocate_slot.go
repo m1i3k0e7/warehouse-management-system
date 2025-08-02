@@ -9,7 +9,7 @@ import (
 )
 
 // AllocateSlotCommandHandler handles the AllocateSlot command.
-	ype AllocateSlotCommandHandler struct {
+type AllocateSlotCommandHandler struct {
 	allocationService *services.AllocationService
 	shelfRepo         repositories.ShelfRepository
 }

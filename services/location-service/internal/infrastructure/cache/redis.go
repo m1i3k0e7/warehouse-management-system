@@ -8,7 +8,7 @@ import (
 )
 
 // RedisCache is a Redis-backed cache.
-	ype RedisCache struct {
+type RedisCache struct {
 	client *redis.Client
 }
 

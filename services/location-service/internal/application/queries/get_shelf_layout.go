@@ -8,7 +8,7 @@ import (
 )
 
 // GetShelfLayoutQueryHandler handles the GetShelfLayout query.
-	ype GetShelfLayoutQueryHandler struct {
+type GetShelfLayoutQueryHandler struct {
 	shelfRepo repositories.ShelfRepository
 }
 

@@ -12,7 +12,7 @@ import (
 )
 
 // MongoRepository is a MongoDB implementation of the repositories.
-	ype MongoRepository struct {
+type MongoRepository struct {
 	client   *mongo.Client
 	database string
 }

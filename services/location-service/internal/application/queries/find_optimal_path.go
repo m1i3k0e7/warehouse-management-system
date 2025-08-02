@@ -8,7 +8,7 @@ import (
 )
 
 // FindOptimalPathQueryHandler handles the FindOptimalPath query.
-	ype FindOptimalPathQueryHandler struct {
+type FindOptimalPathQueryHandler struct {
 	pathfinder *services.PathfindingService
 }
 

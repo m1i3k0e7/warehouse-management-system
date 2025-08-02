@@ -14,7 +14,7 @@ import (
 )
 
 // LocationServer is the implementation of the gRPC LocationService.
-	ype LocationServer struct {
+type LocationServer struct {
 	pb.UnimplementedLocationServiceServer
 
 	// Repositories

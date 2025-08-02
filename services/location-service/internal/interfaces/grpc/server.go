@@ -11,7 +11,7 @@ import (
 )
 
 // Server is a gRPC server.
-	type Server struct {
+type Server struct {
 	grpcServer *grpc.Server
 	listener   net.Listener
 }
