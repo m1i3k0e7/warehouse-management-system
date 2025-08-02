@@ -7,9 +7,9 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/your-repo/wms/location-service/internal/infrastructure/database"
-	grpc_server "github.com/your-repo/wms/location-service/internal/interfaces/grpc"
-	"github.com/your-repo/wms/location-service/internal/interfaces/grpc/handlers"
+	"github.com/m1i3k0e7/warehouse-management-system/services/location-service/internal/infrastructure/database"
+	grpc_server "github.com/m1i3k0e7/warehouse-management-system/services/location-service/internal/interfaces/grpc"
+	"github.com/m1i3k0e7/warehouse-management-system/services/location-service/internal/interfaces/grpc/handlers"
 )
 
 func main() {

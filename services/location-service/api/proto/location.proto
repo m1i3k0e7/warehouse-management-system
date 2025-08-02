@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package location;
 
-option go_package = "github.com/your-repo/wms/location-service/api/proto;proto";
+option go_package = "github.com/m1i3k0e7/warehouse-management-system/services/location-service/api/proto;proto";
 
 // LocationService provides functionalities for warehouse layout and pathfinding.
 service LocationService {

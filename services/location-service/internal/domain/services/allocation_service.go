@@ -3,8 +3,8 @@ package services
 import (
 	"context"
 
-	"github.com/your-repo/wms/location-service/internal/domain/entities"
-	"github.com/your-repo/wms/location-service/internal/domain/repositories"
+	"github.com/m1i3k0e7/warehouse-management-system/services/location-service/internal/domain/entities"
+	"github.com/m1i3k0e7/warehouse-management-system/services/location-service/internal/domain/repositories"
 )
 
 // AllocationService provides logic for allocating slots for materials.

@@ -3,8 +3,8 @@ package queries
 import (
 	"context"
 
-	"github.com/your-repo/wms/location-service/internal/domain/entities"
-	"github.com/your-repo/wms/location-service/internal/domain/repositories"
+	"github.com/m1i3k0e7/warehouse-management-system/services/location-service/internal/domain/entities"
+	"github.com/m1i3k0e7/warehouse-management-system/services/location-service/internal/domain/repositories"
 )
 
 // GetShelfLayoutQueryHandler handles the GetShelfLayout query.

@@ -3,12 +3,12 @@ package handlers
 import (
 	"context"
 
-	pb "github.com/your-repo/wms/location-service/api/proto"
-	"github.com/your-repo/wms/location-service/internal/application/commands"
-	"github.com/your-repo/wms/location-service/internal/application/queries"
-	"github.com/your-repo/wms/location-service/internal/domain/entities"
-	"github.com/your-repo/wms/location-service/internal/domain/repositories"
-	"github.com/your-repo/wms/location-service/internal/domain/services"
+	pb "github.com/m1i3k0e7/warehouse-management-system/services/location-service/api/proto"
+	"github.com/m1i3k0e7/warehouse-management-system/services/location-service/internal/application/commands"
+	"github.com/m1i3k0e7/warehouse-management-system/services/location-service/internal/application/queries"
+	"github.com/m1i3k0e7/warehouse-management-system/services/location-service/internal/domain/entities"
+	"github.com/m1i3k0e7/warehouse-management-system/services/location-service/internal/domain/repositories"
+	"github.com/m1i3k0e7/warehouse-management-system/services/location-service/internal/domain/services"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )

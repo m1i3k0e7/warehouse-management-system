@@ -6,8 +6,8 @@ import (
 
 	"google.golang.org/grpc"
 
-	pb "github.com/your-repo/wms/location-service/api/proto"
-	"github.com/your-repo/wms/location-service/internal/interfaces/grpc/handlers"
+	pb "github.com/m1i3k0e7/warehouse-management-system/services/location-service/api/proto"
+	"github.com/m1i3k0e7/warehouse-management-system/services/location-service/internal/interfaces/grpc/handlers"
 )
 
 // Server is a gRPC server.

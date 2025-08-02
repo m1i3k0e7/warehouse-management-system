@@ -7,8 +7,8 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 
-	"github.com/your-repo/wms/location-service/internal/domain/entities"
-	"github.com/your-repo/wms/location-service/internal/domain/repositories"
+	"github.com/m1i3k0e7/warehouse-management-system/services/location-service/internal/domain/entities"
+	"github.com/m1i3k0e7/warehouse-management-system/services/location-service/internal/domain/repositories"
 )
 
 // MongoRepository is a MongoDB implementation of the repositories.

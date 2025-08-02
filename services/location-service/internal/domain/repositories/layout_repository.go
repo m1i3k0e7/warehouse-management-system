@@ -2,7 +2,7 @@ package repositories
 
 import (
 	"context"
-	"github.com/your-repo/wms/location-service/internal/domain/entities"
+	"github.com/m1i3k0e7/warehouse-management-system/services/location-service/internal/domain/entities"
 )
 
 // LayoutRepository defines the interface for interacting with the overall warehouse layout.

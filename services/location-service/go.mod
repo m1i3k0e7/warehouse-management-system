@@ -1,4 +1,4 @@
-module github.com/your-repo/wms/location-service
+module github.com/m1i3k0e7/warehouse-management-system/services/location-service
 
 go 1.24.5
 

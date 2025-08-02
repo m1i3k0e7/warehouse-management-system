@@ -1,7 +1,7 @@
 package services
 
 import (
-	"github.com/your-repo/wms/location-service/internal/domain/entities"
+	"github.com/m1i3k0e7/warehouse-management-system/services/location-service/internal/domain/entities"
 )
 
 // PathfindingService provides logic for finding optimal paths.

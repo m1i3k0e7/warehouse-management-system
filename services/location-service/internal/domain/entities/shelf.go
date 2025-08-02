@@ -8,7 +8,7 @@ type Point struct {
 }
 
 // SlotStatus represents the state of a shelf slot.
-	type SlotStatus string
+type SlotStatus string
 
 const (
 	StatusEmpty    SlotStatus = "EMPTY"
@@ -18,7 +18,7 @@ const (
 )
 
 // Slot represents a single storage unit on a shelf.
-	type Slot struct {
+type Slot struct {
 	ID         string
 	Position   Point
 	Status     SlotStatus
@@ -26,7 +26,7 @@ const (
 }
 
 // Shelf represents a physical shelf in the warehouse.
-	type Shelf struct {
+type Shelf struct {
 	ID       string
 	ZoneID   string
 	Position Point
