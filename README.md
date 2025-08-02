@@ -16,6 +16,7 @@ A modern, microservices-based Warehouse Management System designed to integrate 
 -   🗺️ **Intelligent Location Management**: Automatically suggests the optimal storage slot for new materials and maintains a digital twin of the warehouse layout.
 -   🤖 **Optimized Pathfinding**: Calculates the most efficient route for warehouse staff to navigate from their current position to a target shelf, improving picking and stocking times.
 -   📊 **Admin Dashboard**: A comprehensive web-based dashboard for managers to monitor the warehouse layout, inventory levels, and overall system health in real-time.
+-   📈 **Data Analytics and Insights**: Ingests operational data to provide historical analysis, performance metrics, and actionable insights for warehouse optimization.
 -   📱 **Worker Application**: A streamlined front-end application to guide staff through material handling tasks like placement, retrieval, and transfers.
 -   ⚙️ **High-Availability Architecture**: Built on an event-driven, microservices architecture to ensure stability, scalability, and fault tolerance.
 
@@ -37,9 +38,11 @@ graph TD
         D -- HTTPS/REST & WebSocket --> E
         E -- gRPC --> F[Inventory Service]
         E -- gRPC --> G[Location Service]
+        E -- REST --> P[Analytics Service]
         F -- gRPC --> G
         F -- Pub/Sub --> H{Kafka / NATS}
         I[Realtime Service] -- Sub/Pub --> H
+        P -- Sub --> H
         I -- WebSocket --> D
     end
 
@@ -47,12 +50,14 @@ graph TD
         F
         G
         I
+        P
     end
 
     subgraph "Data Stores"
         F --> J["fa:fa-database PostgreSQL (Inventory)"]
         G --> K["fa:fa-database MongoDB (Layout)"]
         G --> L["fa:fa-database Redis (Cache)"]
+        P --> Q["fa:fa-database PostgreSQL (Analytics)"]
     end
 
     subgraph "Observability"
@@ -61,12 +66,14 @@ graph TD
         F --> M
         G --> M
         I --> M
+        P --> M
         M --> N
     end
 
     style F fill:#f9f,stroke:#333,stroke-width:2px
     style G fill:#f9f,stroke:#333,stroke-width:2px
     style I fill:#f9f,stroke:#333,stroke-width:2px
+    style P fill:#f9f,stroke:#333,stroke-width:2px
 ```
 
 ---
@@ -75,7 +82,7 @@ graph TD
 
 | Category          | Technology                                                              |
 | ----------------- | ----------------------------------------------------------------------- |
-| **Backend**       | Go, Node.js                                                             |
+| **Backend**       | Go, Node.js, Python (FastAPI, SQLAlchemy, Kafka-Python, APScheduler)    |
 | **Frontend**      | React, JavaScript/TypeScript, CSS                                       |
 | **API & Comms**   | gRPC, Protocol Buffers, REST, WebSocket                                 |
 | **Databases**     | PostgreSQL, MongoDB, Redis                                              |
@@ -91,6 +98,7 @@ graph TD
 
 -   Go (version 1.18+)
 -   Node.js (version 18+)
+-   Python (version 3.9+)
 -   Docker & Docker Compose
 -   `protoc` compiler
 -   `kubectl` (for Kubernetes deployment)
@@ -124,6 +132,11 @@ graph TD
     cd services/location-service
     go mod tidy
     go run ./cmd/server/main.go
+    
+    # Example for analytics-service
+    cd services/analytics-service
+    pip install -r requirements.txt
+    uvicorn src.main:app --reload
     ```
     Repeat for `inventory-service` and `realtime-service`.
 
@@ -150,6 +163,7 @@ graph TD
 ├── infrastructure/     # Docker, K8s, Terraform, and other infra configurations
 ├── scripts/            # Deployment and setup scripts
 ├── services/           # Backend microservices
+│   ├── analytics-service/  # Provides data analytics and insights (Python)
 │   ├── inventory-service/  # Manages material data (Go)
 │   ├── location-service/   # Manages physical layout and locations (Go)
 │   └── realtime-service/   # Manages WebSocket connections (Node.js)
